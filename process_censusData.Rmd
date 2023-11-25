@@ -8,7 +8,7 @@ output: pdf_document
 ```{r message = FALSE}
 library(tidycensus)
 library(dplyr)
-library(tidyr)
+library(tidyr)  
 ```
 
 ```{r message = FALSE}
@@ -20,7 +20,7 @@ readRenviron("~/.Renviron")
 vars2021 <- load_variables(2021, "acs5", cache = TRUE)
 ```
 ```{r}
-st <- read.csv("data/states.csv")
+st <- read.csv("external/states.csv")
 states <- st[,1]
 states_abbr <- st[,2]
 states_cap <- toupper(st[,1])
@@ -30,12 +30,26 @@ states_cap <- toupper(st[,1])
 ```{r message = FALSE}
 # RACE VARIABLES
 race_vars <- c(
-  White = "B03002_003",
-  Black = "B03002_004",
-  Native = "B03002_005",
-  Asian = "B03002_006",
-  HIPI = "B03002_007",
-  Hispanic = "B03002_012")
+  total_race = "B02001_001",
+  White = "B02008_001",
+  Black = "B02009_001",
+  Native = "B02010_001",
+  Asian = "B02011_001",
+  HIPI = "B02012_001",
+  other_race = "B02013_001",
+  White_alone  = "B02001_002",
+  Black_alone  = "B02001_003",
+  Native_alone  = "B02001_004",
+  Asian_alone  = "B02001_005",
+  HIPI_alone  = "B02001_006",
+  other_race_alone = "B02001_007",
+  two_or_more_races  = "B02001_008",
+  two_or_more_races_inc  = "B02001_009",
+  two_or_more_races_ex  = "B02001_010",
+  H_total = "B03003_001",
+  nonHispanic = "B03003_002",
+  Hispanic = "B03003_003"
+  )
 
 race_dat <-  get_acs(geography = "state", 
                      variables = race_vars, 
@@ -43,6 +57,17 @@ race_dat <-  get_acs(geography = "state",
                      year = 2021)[,1:4] %>% 
   pivot_wider(names_from = "variable", values_from = "estimate") %>% 
   select(-c("GEOID"))
+
+race_dat$white_nonwhite_ratio <- race_dat$White_alone /
+  (race_dat$total_race - race_dat$White_alone)
+race_dat$hisp_nonhisp_ratio <- race_dat$Hispanic/race_dat$nonHispanic
+
+#hd <- head(race_dat);hd$total_race[1:6]
+#hd_al <- rowSums(hd[,3:9])[1:6]
+#cbind(rowSums(hd[,3:9])[1:6],hd$total_race[1:6])[,1]-
+#cbind(rowSums(hd[,3:9])[1:6],hd$total_race[1:6])[,2]
+#colnames(hd[,3:9])
+#race_dat[,3:9] <- race_dat[,3:9]/race_dat$total_race
 ```
 
 ```{r warning = FALSE, message = FALSE}
@@ -83,19 +108,26 @@ sexAge_dat$total <- sexAge_dat$B01001_001
 sexAge_dat$male_total <- sexAge_dat$B01001_002
 sexAge_dat$female_total <- sexAge_dat$B01001_026
 sexAge_dat$male_under21 <- apply(sexAge_dat[, c(do.call(
-    paste0, expand.grid("B01001_00", 3:9)),"B01001_010")], sum, MARGIN = 1)
+    paste0, expand.grid("B01001_00", 3:9)))], sum, MARGIN = 1)
 sexAge_dat$male_ov21und65 <- apply(sexAge_dat[, do.call(paste0, 
-    expand.grid("B01001_0", 11:19))], sum, MARGIN = 1)
+    expand.grid("B01001_0", 10:19))], sum, MARGIN = 1)
 sexAge_dat$male_over65 <- apply(sexAge_dat[, do.call(paste0, 
-    expand.grid("B01001_0", 19:25))], sum, MARGIN = 1)
+    expand.grid("B01001_0", 20:25))], sum, MARGIN = 1)
 sexAge_dat$female_under21 <- apply(sexAge_dat[, do.call(paste0, 
     expand.grid("B01001_0", 27:33))], sum, MARGIN = 1)
-sexAge_dat$female_over65 <- apply(sexAge_dat[, do.call(paste0, 
+sexAge_dat$female_ov21_und65 <- apply(sexAge_dat[, do.call(paste0, 
     expand.grid("B01001_0", 34:43))], sum, MARGIN = 1)
 sexAge_dat$female_over65 <- apply(sexAge_dat[, do.call(paste0, 
     expand.grid("B01001_0", 44:49))], sum, MARGIN = 1)
-sexAge_dat <- sexAge_dat[, c(2, 52:59)]
-
+sexAge_dat$female_14_to_44 <- apply(sexAge_dat[, do.call(paste0, 
+    expand.grid("B01001_0", 30:49))], sum, MARGIN = 1)
+sexAge_dat$ratio_F14to44_totalF <- sexAge_dat$female_14_to_44/sexAge_dat$female_total
+sexAge_dat$ratio_F14to44_totalM <- sexAge_dat$female_14_to_44/sexAge_dat$male_total
+sexAge_dat$ratio_F14to44_total <- sexAge_dat$female_14_to_44/sexAge_dat$total
+sexAge_dat$ratio_F14to44_male_over65 <- sexAge_dat$female_14_to_44/sexAge_dat$male_over65
+sexAge_dat$ratio_F14to44_female_over65 <- sexAge_dat$female_14_to_44/sexAge_dat$female_over65
+sexAge_dat <- sexAge_dat[, c(2, 52:66)]
+sexAge_dat$FM_ratio <- sexAge_dat$female_total/sexAge_dat$male_total
 med_agew <- get_acs(geography = "state", 
                     variables = c(medage = "B01002_001",
                                   medianAge_M = "B01002_002",
@@ -151,12 +183,20 @@ edu_vars <- c(edu_ov25_total = "B15003_001",
               edu_ov25_MA = "B15003_023",
               edu_ov25_profschdeg= "B15003_024",
               edu_ov25_doctorate = "B15003_025")
+# below high school
+edu_dat2 <- get_acs(geography = "state", 
+                    variables = c(do.call(paste0, expand.grid("B15003_00", 2:9)), 
+                                  do.call(paste0, expand.grid("B15003_0", 10:15))), 
+                    state = states_abbr, 
+                    year = 2021)[,1:4]
+eduDat2 <- edu_dat2 %>% 
+  pivot_wider(names_from = "variable", values_from = "estimate")
 
+# above high school
 edu_dat <- get_acs(geography = "state", 
                     variables = edu_vars, 
                     state = states_abbr, 
                     year = 2021)[,1:4]
-
 eduDat <- edu_dat %>% 
   pivot_wider(names_from = "variable", values_from = "estimate")
 eduDat$edu_ov25HS_GED <- 
@@ -168,7 +208,36 @@ eduDat$edu_ov25someCol <-
 eduDat$edu_ov25MAprofPhD <- 
   apply(eduDat[, c("edu_ov25_MA", "edu_ov25_profschdeg", "edu_ov25_doctorate")],
         FUN = sum, MARGIN = 1)
-eduDat <- eduDat[,2:16]
+
+# edu by sex
+edu_dat3 <- get_acs(geography = "state", 
+                    variables = c("B15002_001", "B15002_002", "B15002_019",
+                                  do.call(paste0, expand.grid("B15002_03", 2:5)), 
+                                  do.call(paste0, expand.grid("B15002_0", 15:18))), 
+                    state = states_abbr, 
+                    year = 2021)[,1:4]
+eduDat3 <- edu_dat3 %>% 
+  pivot_wider(names_from = "variable", values_from = "estimate")
+
+eduDatComp <- as.data.frame(cbind(
+                "edu_total" = eduDat$edu_ov25_total,
+                   # percentages25,
+                "edu_ov25belowHS" = rowSums(eduDat2[,3:16]), 	
+                "eduMtotal" = eduDat3$B15002_002,
+                "eduFtotal" = eduDat3$B15002_019,
+                "edu_F_overBA" = 
+                  rowSums(eduDat3[,do.call(paste0, expand.grid("B15002_03", 2:5))]),
+                "edu_M_overBA" = 
+                  rowSums(eduDat3[,do.call(paste0, expand.grid("B15002_0", 15:18))]),
+                eduDat[,3:16]
+                ))
+eduDatCompiled <- eduDatComp %>% 
+  mutate(across(everything(), ~ . / edu_total)) %>%
+  select(-c(edu_total, edu_ov25_total))
+  
+eduDatCompiled <- cbind("NAME" = eduDat3$NAME, 
+                        "edu_total" = eduDat$edu_ov25_total, eduDatCompiled)
+eduDatCompiled
 ```
 
 
@@ -179,7 +248,7 @@ censusdatw <- med_agew %>%
   left_join(sexAge_dat, by = join_by(NAME)) %>%
   left_join(race_dat, by = join_by(NAME)) %>%
   left_join(income_dat, by = join_by(NAME)) %>%
-  left_join(eduDat, by = join_by(NAME)) %>%
+  left_join(eduDatCompiled, by = join_by(NAME)) %>%
   left_join(birthLastYearByAge_dat, by = join_by(NAME))
                    
 #colnames(censusdatw)
@@ -188,11 +257,12 @@ censusdatw$STATE <- toupper(censusdatw$NAME)
 censusdatw$state <-  states_abbr[match(censusdatw$STATE, states_cap)]
 censusdatw <- censusdatw %>% select(state, everything())
 censusdatw <- censusdatw %>% select(-c(NAME, STATE))
+dim(censusdatw)
 ```
 
 
 ```{r}
-#write.csv(censusdatw, "ACS_2021_censusData.csv")
+write.csv(censusdatw, "external/ACS_2021_censusData.csv")
 #dim(censusdat)
 ```
 

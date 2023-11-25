@@ -1,6 +1,8 @@
 
 processTwitterData <- function(datasetString) {
-  
+  library(maps)
+  cit <- us.cities
+  cit[,1] <- sub('...$', "", cit[,1])
   # read in the list of variables to drop
   drop_vars <- unlist(read.csv('external/drops.csv'))
   # read in, format state name and abbreviations
@@ -26,7 +28,8 @@ processTwitterData <- function(datasetString) {
   dt <- select(dt, -all_of(drop_vars))
   dt %>% select(conversation_id, author.id, geo.full_name, 
                   geo.name, geo.geo.bbox, everything())
-  
+  dt$author.id <- as.character(dt$author.id)
+  dt$conversation_id <- as.character(dt$conversation_id)
   # retrieve the state abbr following the comma in full geo name
   dt$state <- sapply(strsplit(dt$geo.full_name, ', '), `[`, 2)
   #reorder
@@ -42,9 +45,24 @@ processTwitterData <- function(datasetString) {
     mutate(city = ifelse(state !="USA" & !(temp.st %in% states), 
                          geo.name, NA)) %>%
     mutate(state = ifelse(state =="USA" & temp.st %in% states, 
-                          states_abbr[match(temp.st, states)], state))%>%
-    select(state, city, everything()) %>%
-    arrange(state, city)
+                          states_abbr[match(temp.st, states)], state))
+  
+    # mismatching locations, if known city, replace with state
+    mism <- unique(dt$state)[!unique(dt$state) %in% st[,2]]
+    dt <- dt %>%
+      mutate(state = ifelse(state %in% mism & state %in%cit[,1], 
+                            states_abbr[match(state, st[,2])], state))%>%
+      mutate(state = ifelse(state %in% mism & state %in% st[,1], 
+                            states_abbr[match(state, st[,1])], state))
+    dt <- dt %>% mutate(state=ifelse(state=="USA",NA, state))
+    dt$state <- ifelse(dt$state %in% c("New York City", "Brooklyn", "Queens", 
+                                           "New York County"), "NY", dt$state)
+    # for now also removing Virgin Islands and Puerto Rico as I don't have the
+    # external data for these
+
+    unknownst <- unique(dt$state)[!unique(dt$state) %in% st[,2]]
+    dt <- dt %>% mutate(state = ifelse(state %in% unknownst, NA, state))
+  
   
   # geo full name refers to either state, USA or city, state -- too much noise.
   # drop temp and noisy location vars
@@ -61,8 +79,15 @@ processTwitterData <- function(datasetString) {
   dt$LONG_max <- as.numeric(temp[seq(4, length(temp), 4)])
   dt$LAT_max <- as.numeric(temp[seq(3, length(temp), 4)])
   
-  dt <- dt %>% select("state", "city", "LAT_min", "LONG_min", "LAT_max", 
-                          "LONG_max", everything(), -c(X))
+  dt$tweeted_at <- as_datetime(dt$created_at)
+  dt$TwitterAccountCreatedAt <- as_datetime(dt$author.created_at)
+  dt <- dt %>% mutate(date_of_tweet = date(tweeted_at))
+  
+  dt <- dt %>% select("tweeted_at", "author.id",  "state", "city", 
+                      "LAT_min", "LONG_min", "LAT_max", "LONG_max", 
+                      everything(),
+                      -c(X, created_at, author.created_at, `Unnamed..0.1`))
+  dt <- dt %>% arrange(tweeted_at, author.id, state, city) 
   
   return(dt)
 }

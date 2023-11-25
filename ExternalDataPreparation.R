@@ -2,7 +2,6 @@
 ## Add new datasets at the end as needed
 
 library(dplyr)
-
 st <- read.csv("external/states.csv")
 colnames(st) <- c("state", "abbr")
 st <- as.data.frame(st)
@@ -12,7 +11,7 @@ states_cap <- toupper(st[,1])
 
 # State level abortion information & provider counts
 abortion <- read.csv("external/providers_clean_state_lev.csv") # 51 x 13
-abortion <- abortion %>% select(-X)
+#abortion <- abortion %>% select(-X)
 
 # 2020 election votes by state 
 # https://www.presidency.ucsb.edu/statistics/elections/2020
@@ -49,6 +48,7 @@ colnames(politics2018)[1] <- "state"
 religious2017 <- readxl::read_xlsx('external/religiousPercentagesState2017_statista.xlsx')
 religious2017 <- left_join(st, religious2017, by = join_by(state))
 religious2017 <- religious2017 %>% select(-state)
+religious2017[,2:4] <- religious2017[,2:4] / 100
 colnames(religious2017)[1] <- "state"
 
 #https://www.statista.com/statistics/660661/abortion-rate-united-states-by-state/
@@ -74,7 +74,9 @@ state_level <- abortion %>%
   left_join(ideology2018, by = join_by(state)) %>%
   left_join(politics2018, by = join_by(state))%>%
   left_join(religious2017, by = join_by(state))
+
+state_level <- state_level %>% select(-X)
   # 51 x 85
 #colnames(state_level)
 
-#write.csv(state_level, 'StateLevelExternalData2021.csv')
+write.csv(state_level, 'external/StateLevelExternalData2021.csv')
