@@ -21,107 +21,69 @@ library(forecast)
 library(glmmTMB)  # for multilevel logistic models
 library(sjPlot)
 library(MuMIn)  # for R^2
+library(tidyr)
 ```
 
 ```{r}
-source('processTwitterData.R')
-source('rm_dupl_empty_noneng.R')
-source('clean_tweet.R')
-before <- processTwitterData('twitterData/before_roe_sentiment.csv')
-before$RoeWadeOverturn <- "before"
-after <- processTwitterData('twitterData/after_roe_sentiment.csv')
-after$RoeWadeOverturn <- "after"
-
-# read in the compiled external data csv file -- see ExternalDataPreparation.R
-statelev  <- read.csv('external/StateLevelExternalData2021.csv')
-before <- left_join(before, statelev, by = join_by(state)) # 38599 x 92
-after <- left_join(after, statelev, by = join_by(state))
-
-dat22 <- rbind(before, after) 
-dat22$RoeWadeOverturn <- factor(dat22$RoeWadeOverturn, levels = c("before", "after"))
-dat22 <- dat22 %>% 
-  mutate(preDobbsLeak = ifelse(tweeted_at < as.Date("2022-05-3"), 1, 0)) %>%
-  select(-c(X, temp, STATE))
-
-dat22 <- dat22 %>% 
-  mutate(createdAccAfterLeak = 
-           ifelse(as.Date(TwitterAccountCreatedAt) > as.Date("2022-05-3"), 1, 0),
-         createdAccAfterOverturn = 
-           ifelse(as.Date(TwitterAccountCreatedAt) > as.Date("2022-06-24"), 1, 0),
-         accountMadeOn = date(TwitterAccountCreatedAt)
-  )
+dat <- read.csv("wave2_combined.csv", header=TRUE)
+head(dat)
 ```
-
-```{r}
-# REMOVE DUPLICATES/EMPTY TWEETS
-dat22$record_id <- seq_len(dim(dat22)[1])
-dat <- dat22
-dat <- rm_dupl_empty_noneng(dat)
-# removed 3846 records where the tweet was empty or only contained account 
-# handle(s)
-# if i keep dataset <- dataset %>% ...%>% filter(row_number() == 1) in 
-# rm_dupl_empty_noneng.R 33099 rows deleted-- for now, comment it out, if there 
-# is time come back and investigate further if it correctly removes the records
-# within a given author.id for which cleantext is duplicated and keeps only one
-# instance of the duplicated cleantext per author, while retaining it if it's 
-# used by other authors
-
-# investigating which records were deleted:
-dat22$cleantext <- clean_tweet(dat22$vader_preprocessed_text)
-removed_rec <- dat22[dat22$record_id %in% (seq_len(dim(dat22)[1])[!seq_len(dim(dat22)[1])%in%dat$record_id]),]
-
-total_num_tweets_per_auth <- dat %>% 
-    group_by(author.id) %>% 
-    summarise(num_tweets_by_author = n_distinct(record_id)) %>% 
-    arrange(desc(num_tweets_by_author)) 
-# after examining tweets, 1113146496592044032 has 928 identical tweets about
-# a start up, with different accounts tagged. remove:
-dat <- dat[dat$author.id!="1113146496592044032",]
-```
-
--- note: last updated the above data processing code on Nov 24, 2pm--
-
-
 
 
 ```{r}
 # 174 days Jan 1-Jun 24 2022, n = 38599
-beforeTweetsPerDay <- before %>% dplyr::count(tweetCountOnDay = date_of_tweet) 
+beforeTweetsPerDay <- dat[dat$RoeWadeOverturn=="before",] %>%
+  dplyr::count(tweetCountOnDay = date_of_tweet) 
 # 190 days Jun 24 2022 - Dec 31 2022;  217739 tweets
-afterTweetsPerDay <- after %>% dplyr::count(tweetCountOnDay = date_of_tweet) 
+afterTweetsPerDay <- dat[dat$RoeWadeOverturn=="after",]  %>%
+  dplyr::count(tweetCountOnDay = date_of_tweet) 
 # 370 days
 TweetsPerDay <- dat %>% dplyr::count(tweetCountOnDay = date_of_tweet) 
+PosTweetsPerDay <- dat[dat$positive==1,] %>% 
+  dplyr::count(tweetCountOnDay = date_of_tweet) 
+NegTweetsPerDay <- dat[dat$negative==1,] %>% 
+  dplyr::count(tweetCountOnDay = date_of_tweet) 
+NeuTweetsPerDay <- dat[dat$neutral==1,] %>% 
+  dplyr::count(tweetCountOnDay = date_of_tweet) 
+# NAs present for two days for neu counts, replace with 0
+#NegTweetsPerDay[!NegTweetsPerDay$tweetCountOnDay %in% NeuTweetsPerDay$tweetCountOnDay,]
+NeuTweetsPerDay <- left_join(NegTweetsPerDay, NeuTweetsPerDay,join_by(tweetCountOnDay))
+NeuTweetsPerDay$n.y <- replace_na(NeuTweetsPerDay$n.y, 0)
+NeuTweetsPerDay <- NeuTweetsPerDay %>% dplyr::select(-n.x)
+colnames(NeuTweetsPerDay)[2] <- "n"
 ```
 
 ```{r echo = FALSE}
-ggplot(beforeTweetsPerDay, aes(x = tweetCountOnDay, y = n)) + 
-  geom_line() + 
-  geom_vline(xintercept = as.Date("2022-05-02"), color = "blue", lty = "dashed") + 
-  ggtitle("Number of tweets per day between January 1, 2022 and January 6, 2023") +
-  ylab("Number of tweets") +
-  xlab("Time")+
-  scale_x_date(breaks = as.Date(c("2022-01-01","2022-02-01", "2022-03-01",
-                                  "2022-04-01", "2022-05-01","2022-06-01")), 
-               labels = c("Jan", "Feb", "March", "Apr", "May", "June")) +
-  theme_bw()
+beforeTweetsPerDay$tweetCountOnDay <- as.Date(beforeTweetsPerDay$tweetCountOnDay)
+# ggplot(beforeTweetsPerDay, aes(x = tweetCountOnDay, y = n)) + 
+#   geom_line() + 
+#  # geom_vline(xintercept = as.Date("2022-05-02"), color = "blue", lty = "dashed") + 
+#   ggtitle("Number of tweets per day between January 1, 2022 and January 6, 2023") +
+#   ylab("Number of tweets") +
+#   xlab("Time")+
+#   scale_x_date(breaks = (c("2022-01-01","2022-02-01", "2022-03-01",
+#                                   "2022-04-01", "2022-05-01","2022-06-01")), 
+#                labels = c("Jan", "Feb", "March", "Apr", "May", "June")) +
+#   theme_bw()
 # May 2 2022: Politico published a leaked draft of the Supreme 
 # Court majority decision to overturn Roe v. Wade 
 # May 12-14: major protests and rallies
 ```
 ```{r echo = FALSE}
-ggplot(afterTweetsPerDay, aes(x = tweetCountOnDay, y = n)) + 
-  geom_line() + 
-  ggtitle("Number of tweets per day between June 24, 2022 and January 6, 2022") +
-  ylab("Number of tweets") +
-  xlab("Time")+
-  scale_x_date(breaks = as.Date(c("2022-06-01","2022-07-01", "2022-08-01",
-                                  "2022-09-01", "2022-10-01","2022-11-01",
-                                  "2022-12-01", "2023-01-01")), 
-               labels = c("June", "July", "Aug", "Sep", "Oct", "Nov", "Dec", "Jan")) +
-  theme_bw()
+# ggplot(afterTweetsPerDay, aes(x = tweetCountOnDay, y = n)) + 
+#   geom_line() + 
+#   ggtitle("Number of tweets per day between June 24, 2022 and January 6, 2022") +
+#   ylab("Number of tweets") +
+#   xlab("Time")+
+#   scale_x_date(breaks = as.Date(c("2022-06-01","2022-07-01", "2022-08-01",
+#                                   "2022-09-01", "2022-10-01","2022-11-01",
+#                                   "2022-12-01", "2023-01-01")), 
+#                labels = c("June", "July", "Aug", "Sep", "Oct", "Nov", "Dec", "Jan")) +
+#   theme_bw()
 ```
 
 ```{r echo = FALSE}
+TweetsPerDay$tweetCountOnDay <- as.Date(TweetsPerDay$tweetCountOnDay)
 ggplot(TweetsPerDay, aes(x = tweetCountOnDay, y = n)) + 
   geom_line() + 
   geom_vline(xintercept = as.Date("2022-05-02"), color = "blue", lty = "dashed") + 
@@ -140,17 +102,18 @@ ggplot(TweetsPerDay, aes(x = tweetCountOnDay, y = n)) +
 ```
 
 
-```{r}
-# authors/accounts per day
-newAccsPerDay <- dat %>% 
-  filter(accountMadeOn > as.Date("2021-12-31")) %>% 
-  count(newAccCount = accountMadeOn) 
 
-ggplot(newAccsPerDay, aes(x = newAccCount, y = n)) + 
-  geom_line() + theme_bw()+
-  ggtitle("Number of new accounts per day between January 1, 2022 and January 6, 2023") +
-  ylab("Number of new accounts") +
-  xlab("Time")
+```{r}
+# # authors/accounts per day
+# newAccsPerDay <- dat %>% 
+#   filter(accountMadeOn > as.Date("2021-12-31")) %>% 
+#   count(newAccCount = accountMadeOn) 
+# 
+# ggplot(newAccsPerDay, aes(x = newAccCount, y = n)) + 
+#   geom_line() + theme_bw()+
+#   ggtitle("Number of new accounts per day between January 1, 2022 and January 6, 2023") +
+#   ylab("Number of new accounts") +
+#   xlab("Time")
 # These peaks are related to Elon Musk acquiring Twitter, agreement reached 4/26
 ```
 
@@ -185,7 +148,7 @@ colnames(sent_counts) <- levels(bef_af_rvw_s$RoeWadeOverturn)
 
 
 
-```{r}
+```{r warning = FALSE, message = FALSE}
 # compute proportions of sentiment labels per state before/ after the
 #overturn and in general
 state_sent_props <- dat %>% 
