@@ -1,0 +1,279 @@
+---
+title: "CENSUS DATA - ACS5 2021"
+author: "Meltem Ozcan"
+date: "2023-10-21"
+output: pdf_document
+---
+
+```{r message = FALSE}
+library(tidycensus)
+library(dplyr)
+library(tidyr)  
+```
+
+```{r message = FALSE}
+#set API key
+census_api_key("64021c64d48d04b810459f0911e087d17683af55", 
+               overwrite = TRUE, install = TRUE)
+#can be accessed by Sys.getenv("CENSUS_API_KEY")
+readRenviron("~/.Renviron")
+vars2021 <- load_variables(2021, "acs5", cache = TRUE)
+```
+```{r}
+st <- read.csv("/Users/meltemozcan/Desktop/PSYC 626/TwitterAbortion/external/states.csv")
+states <- st[,1]
+states_abbr <- st[,2]
+states_cap <- toupper(st[,1])
+```
+
+
+```{r message = FALSE}
+# RACE VARIABLES
+race_vars <- c(
+  total_race = "B02001_001",
+  White = "B02008_001",
+  Black = "B02009_001",
+  Native = "B02010_001",
+  Asian = "B02011_001",
+  HIPI = "B02012_001",
+  other_race = "B02013_001",
+  White_alone  = "B02001_002",
+  Black_alone  = "B02001_003",
+  Native_alone  = "B02001_004",
+  Asian_alone  = "B02001_005",
+  HIPI_alone  = "B02001_006",
+  other_race_alone = "B02001_007",
+  two_or_more_races  = "B02001_008",
+  two_or_more_races_inc  = "B02001_009",
+  two_or_more_races_ex  = "B02001_010",
+  H_total = "B03003_001",
+  nonHispanic = "B03003_002",
+  Hispanic = "B03003_003"
+  )
+
+race_dat <-  get_acs(geography = "state", 
+                     variables = race_vars, 
+                     state = states_abbr, 
+                     year = 2021)[,1:4] %>% 
+  pivot_wider(names_from = "variable", values_from = "estimate") %>% 
+  dplyr::select(-c("GEOID"))
+
+race_dat$white_nonwhite_ratio <- race_dat$White_alone /
+  (race_dat$total_race - race_dat$White_alone)
+race_dat$hisp_nonhisp_ratio <- race_dat$Hispanic/race_dat$nonHispanic
+
+race <- c("White_alone", "Black_alone", "Native_alone", "HIPI_alone" , 
+              "Asian_alone", "other_race_alone", "two_or_more_races")
+race_dat[, race] <- race_dat[, race] / race_dat$total_race
+#hd <- head(race_dat);hd$total_race[1:6]
+#hd_al <- rowSums(hd[,3:9])[1:6]
+#cbind(rowSums(hd[,3:9])[1:6],hd$total_race[1:6])[,1]-
+#cbind(rowSums(hd[,3:9])[1:6],hd$total_race[1:6])[,2]
+#colnames(hd[,3:9])
+#race_dat[,3:9] <- race_dat[,3:9]/race_dat$total_race
+```
+
+```{r warning = FALSE, message = FALSE}
+# INCOME VARIABLES
+
+income_at_above_povertyline12_vars <- 
+  c(aggrIncome12m_infadj = "B19025_001",
+    income12m_below_povlevTotal = "B17001F_002",
+    income12m_atAbove_povlevTotal = "B17001F_031",
+    income12m_below_povlevM = "B17004_003",
+    income12m_below_povlevF = "B17001F_017",
+    income12m_atAbove_povlevM = "B17001F_032",
+    income12m_atAbove_povlevF = "B17001F_046"
+    )
+income_dat <- get_acs(geography = "state", 
+                      variables = c(medincome = "B19013_001", 
+                                    income_at_above_povertyline12_vars), 
+                       state = states_abbr, 
+                       year = 2021)[,1:4] %>% 
+  pivot_wider(names_from = "variable", values_from = "estimate") %>% 
+  dplyr::select(-c("GEOID"))
+```
+
+
+
+```{r message = F}
+# VARIABLES ON THE INTERSECTION OF SEX AND AGE
+sex_age_vars <- c(do.call(paste0, expand.grid("B01001_00", 1:9)),
+                  do.call(paste0, expand.grid("B01001_0", 10:49)))
+
+sexage <- get_acs(geography = "state", 
+                  variables = sex_age_vars,
+                  state = states_abbr, 
+                  year = 2021)[,1:4]
+sexAge_dat <- sexage %>% pivot_wider(names_from = "variable", 
+                                   values_from = "estimate")
+sexAge_dat$total <- sexAge_dat$B01001_001
+sexAge_dat$male_total <- sexAge_dat$B01001_002
+sexAge_dat$female_total <- sexAge_dat$B01001_026
+sexAge_dat$male_under21 <- apply(sexAge_dat[, c(do.call(
+    paste0, expand.grid("B01001_00", 3:9)))], sum, MARGIN = 1)
+sexAge_dat$male_ov21und65 <- apply(sexAge_dat[, do.call(paste0, 
+    expand.grid("B01001_0", 10:19))], sum, MARGIN = 1)
+sexAge_dat$male_over65 <- apply(sexAge_dat[, do.call(paste0, 
+    expand.grid("B01001_0", 20:25))], sum, MARGIN = 1)
+sexAge_dat$female_under21 <- apply(sexAge_dat[, do.call(paste0, 
+    expand.grid("B01001_0", 27:33))], sum, MARGIN = 1)
+sexAge_dat$female_ov21_und65 <- apply(sexAge_dat[, do.call(paste0, 
+    expand.grid("B01001_0", 34:43))], sum, MARGIN = 1)
+sexAge_dat$female_over65 <- apply(sexAge_dat[, do.call(paste0, 
+    expand.grid("B01001_0", 44:49))], sum, MARGIN = 1)
+sexAge_dat$female_14_to_44 <- apply(sexAge_dat[, do.call(paste0, 
+    expand.grid("B01001_0", 30:49))], sum, MARGIN = 1)
+sexAge_dat$ratio_F14to44_totalF <- sexAge_dat$female_14_to_44/sexAge_dat$female_total
+sexAge_dat$ratio_F14to44_totalM <- sexAge_dat$female_14_to_44/sexAge_dat$male_total
+sexAge_dat$ratio_F14to44_total <- sexAge_dat$female_14_to_44/sexAge_dat$total
+sexAge_dat$ratio_F14to44_male_over65 <- sexAge_dat$female_14_to_44/sexAge_dat$male_over65
+sexAge_dat$ratio_F14to44_female_over65 <- sexAge_dat$female_14_to_44/sexAge_dat$female_over65
+sexAge_dat <- sexAge_dat[, c(2, 52:66)]
+sexAge_dat$FM_ratio <- sexAge_dat$female_total/sexAge_dat$male_total
+med_agew <- get_acs(geography = "state", 
+                    variables = c(medage = "B01002_001",
+                                  medianAge_M = "B01002_002",
+                                  medianAge_F = "B01002_003"),
+                    state = states_abbr, 
+                    year = 2021)[,1:4] %>% 
+  pivot_wider(names_from = "variable", values_from = "estimate")
+med_agew <- med_agew[, 2:5]
+```
+
+```{r message = FALSE}
+# VARIABLES REGARDING GIVING BIRTH IN THE LAST 12 MONTHS
+
+gavebirth12 <- c(do.call(paste0, expand.grid("B13016_00", 1:9)),
+                 do.call(paste0, expand.grid("B13016_0", 10:17)))
+# collapse sex by age variables
+birth_last12m <- get_acs(geography = "state", 
+                         variables = gavebirth12,
+                         state = states_abbr, 
+                         year = 2021)[,1:4]
+birthLastYearByAge_dat <- birth_last12m %>% 
+  pivot_wider(names_from = "variable", values_from = "estimate")
+birthLastYearByAge_dat$birth_last12mYNtotal <- birthLastYearByAge_dat$B13016_001
+birthLastYearByAge_dat$birth_last12mYtotal <- birthLastYearByAge_dat$B13016_002
+birthLastYearByAge_dat$birth_last12mY_15to19 <- birthLastYearByAge_dat$B13016_003
+birthLastYearByAge_dat$birth_last12mY_20to34 <- 
+  apply(birthLastYearByAge_dat[, do.call(paste0, expand.grid("B13016_00", 4:6))],
+        sum, MARGIN = 1)
+birthLastYearByAge_dat$birth_last12mY_35_50 <- 
+  apply(birthLastYearByAge_dat[, do.call(paste0, expand.grid("B13016_00", 7:9))],
+        sum, MARGIN = 1)
+birthLastYearByAge_dat$birth_last12mNtotal <- birthLastYearByAge_dat$B13016_010
+birthLastYearByAge_dat$birth_last12mN_15to19 <- birthLastYearByAge_dat$B13016_011
+birthLastYearByAge_dat$birth_last12mN_20to34 <- 
+  apply(birthLastYearByAge_dat[, do.call(paste0, expand.grid("B13016_0", 12:14))],
+        sum, MARGIN = 1)
+birthLastYearByAge_dat$birth_last12mN_35_50 <- 
+  apply(birthLastYearByAge_dat[, do.call(paste0, expand.grid("B13016_0", 15:17))],
+        sum, MARGIN = 1)
+birthLastYearByAge_dat <- birthLastYearByAge_dat[,c(2, 20:28)]
+```
+
+```{r warning = FALSE, message = FALSE}
+# EDUCATION VARIABLES
+edu_vars <- c(edu_ov25_total = "B15003_001",
+              edu_ov25_12_nodiploma = "B15003_016",
+              edu_ov25_HSdiploma = "B15003_017",
+              edu_ov25_GED = "B15003_018",
+              edu_ov25_somecol_less1 = "B15003_019",
+              edu_ov25_somecol_nodegree = "B15003_020",
+              edu_ov25_assoc = "B15003_021",
+              edu_ov25_BA = "B15003_022",
+              edu_ov25_MA = "B15003_023",
+              edu_ov25_profschdeg= "B15003_024",
+              edu_ov25_doctorate = "B15003_025")
+# below high school
+edu_dat2 <- get_acs(geography = "state", 
+                    variables = c(do.call(paste0, expand.grid("B15003_00", 2:9)), 
+                                  do.call(paste0, expand.grid("B15003_0", 10:15))), 
+                    state = states_abbr, 
+                    year = 2021)[,1:4]
+eduDat2 <- edu_dat2 %>% 
+  pivot_wider(names_from = "variable", values_from = "estimate")
+
+# above high school
+edu_dat <- get_acs(geography = "state", 
+                    variables = edu_vars, 
+                    state = states_abbr, 
+                    year = 2021)[,1:4]
+eduDat <- edu_dat %>% 
+  pivot_wider(names_from = "variable", values_from = "estimate")
+eduDat$edu_ov25HS_GED <- 
+  apply(eduDat[,c("edu_ov25_HSdiploma","edu_ov25_GED")], 
+        FUN = sum, MARGIN = 1)
+eduDat$edu_ov25someCol <- 
+  apply(eduDat[, c("edu_ov25_somecol_nodegree","edu_ov25_somecol_less1")], 
+        FUN =sum, MARGIN = 1)
+eduDat$edu_ov25MAprofPhD <- 
+  apply(eduDat[, c("edu_ov25_MA", "edu_ov25_profschdeg", "edu_ov25_doctorate")],
+        FUN = sum, MARGIN = 1)
+
+# edu by sex
+edu_dat3 <- get_acs(geography = "state", 
+                    variables = c("B15002_001", "B15002_002", "B15002_019",
+                                  do.call(paste0, expand.grid("B15002_03", 2:5)), 
+                                  do.call(paste0, expand.grid("B15002_0", 15:18))), 
+                    state = states_abbr, 
+                    year = 2021)[,1:4]
+eduDat3 <- edu_dat3 %>% 
+  pivot_wider(names_from = "variable", values_from = "estimate")
+
+eduDatComp <- as.data.frame(cbind(
+                "edu_total" = eduDat$edu_ov25_total,
+                   # percentages25,
+                "edu_ov25belowHS" = rowSums(eduDat2[,3:16]), 	
+                "eduMtotal" = eduDat3$B15002_002,
+                "eduFtotal" = eduDat3$B15002_019,
+                "edu_F_overBA" = 
+                  rowSums(eduDat3[,do.call(paste0, expand.grid("B15002_03", 2:5))]),
+                "edu_M_overBA" = 
+                  rowSums(eduDat3[,do.call(paste0, expand.grid("B15002_0", 15:18))]),
+                eduDat[,3:16]
+                ))
+eduDatCompiled <- eduDatComp %>% 
+  mutate(across(everything(), ~ . / edu_total)) %>%
+  dplyr::select(-c(edu_total, edu_ov25_total))
+  
+eduDatCompiled <- cbind("NAME" = eduDat3$NAME, 
+                        "edu_total" = eduDat$edu_ov25_total, eduDatCompiled)
+eduDatCompiled
+```
+
+
+```{r}
+# join the data frames together
+
+censusdatw <- med_agew %>% 
+  left_join(sexAge_dat, by = join_by(NAME)) %>%
+  left_join(race_dat, by = join_by(NAME)) %>%
+  left_join(income_dat, by = join_by(NAME)) %>%
+  left_join(eduDatCompiled, by = join_by(NAME)) %>%
+  left_join(birthLastYearByAge_dat, by = join_by(NAME))
+                   
+#colnames(censusdatw)
+# substitute state names w abbr
+censusdatw$STATE <- toupper(censusdatw$NAME)
+censusdatw$state <-  states_abbr[match(censusdatw$STATE, states_cap)]
+censusdatw <- censusdatw %>% dplyr::select(state, everything())
+censusdatw <- censusdatw %>% dplyr::select(-c(NAME, STATE))
+dim(censusdatw)
+```
+
+
+```{r}
+write.csv(censusdatw, "/Users/meltemozcan/Desktop/PSYC 626/TwitterAbortion/external/ACS_2021_censusData.csv")
+#dim(censusdat)
+```
+
+
+
+
+
+
+
+
+

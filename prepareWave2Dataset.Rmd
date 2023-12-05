@@ -1,0 +1,52 @@
+---
+title: "Consolidate Twitter data, external data, and labels"
+author: "Meltem Ozcan"
+date: "2023-12-04"
+output: pdf_document
+---
+```{r}
+# To read Twitter data and combine with state level info:
+# source('processTwitterData.R')
+# dt <- processTwitterData('<the name of the file/path>.csv')
+# read in the compiled external data csv file -- see ExternalDataPreparation.R
+# statelevel  <- read.csv('external/StateLevelExternalData2021.csv')
+# dt <- left_join(dt, statelevel, by = join_by(state))
+```
+
+```{r warning = FALSE, message=FALSE}
+library(dplyr)
+library(lubridate)
+```
+
+```{r}
+ source('/Users/meltemozcan/Desktop/PSYC 626/TwitterAbortion/helperFunc/processTwitterGeoFields.R')
+ source('/Users/meltemozcan/Desktop/PSYC 626/TwitterAbortion/helperFunc/clean_tweet.R')
+ source('/Users/meltemozcan/Desktop/PSYC 626/TwitterAbortion/helperFunc/leak_overturn_52daywindows.R')
+ source('/Users/meltemozcan/Desktop/PSYC 626/TwitterAbortion/helperFunc/processTwitterData2.R')
+dt <- readr::read_csv('Data/wave2_with_all_labels.csv')
+
+dt$author.id <- dt$author.id.string
+dt$author_id <- dt$author.id.string
+
+dt$id <- dt$id_str
+
+tic <- Sys.time()
+pr <- processTwitterData2(dt)
+tac <- Sys.time()
+tic-tac
+# read in the compiled external data csv file -- see ExternalDataPreparation.R
+statelev <- read.csv('Data/external/StateLevelExternalData2021.csv')
+dim(statelev)
+dat22 <- left_join(pr, statelev, by = join_by(state)) 
+
+length(unique(dt$author.id))
+length(unique(dat22$author.id))
+length(unique(dat22$id))
+```
+
+
+```{r}
+#write.csv(dat22,"final_wave2.csv")
+```
+
+
