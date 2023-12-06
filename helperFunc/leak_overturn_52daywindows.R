@@ -16,11 +16,11 @@ leak_overturn_52daywindows <- function(ds) {
   ds <- ds %>% 
     arrange(created_at) %>%
     mutate(btwn52_Dobbs_Overturn = 
-             ifelse(created_at > leak_timestamp & created_at < leak_timestamp, 1, 0),
+             ifelse(created_at > leak_timestamp & created_at < overturn_timestamp, 1, 0),
            pre52_Dobbs = 
              ifelse(created_at > (leak_timestamp - days(52)) & created_at < leak_timestamp, 1, 0),
            post52_Overturn = 
-             ifelse(created_at < (overturn_timestamp + days(52)) & created_at > leak_timestamp, 1, 0))
+             ifelse(created_at < (overturn_timestamp + days(52)) & created_at > overturn_timestamp, 1, 0))
   ds <-  ds %>% 
     arrange(created_at) %>%
     mutate(beforeOverturn = 

@@ -1,0 +1,531 @@
+---
+title: "Roe v Wade Overturn Data Visualizations"
+author: "Meltem Ozcan"
+date: "2023-11-24"
+output: pdf_document
+---
+```{r include = FALSE}
+# To read Twitter data and combine with state level info:
+# source('processTwitterData.R')
+# dt <- processTwitterData('<the name of the file/path>.csv')
+# read in the compiled external data csv file -- see ExternalDataPreparation.R
+# statelevel  <- read.csv('external/StateLevelExternalData2021.csv')
+# dt <- left_join(dt, statelevel, by = join_by(state))
+```
+
+```{r warning = FALSE, message=FALSE, include = FALSE}
+library(dplyr)
+library(lubridate)
+library(ggplot2)
+library(tidyr)
+```
+
+```{r warning = FALSE, message = FALSE, include = FALSE}
+dats <- readr::read_csv("Data/final_wave2.csv")
+dat <- dats %>% select(-c(geo.geo.bbo, geo.geo.bbox, text, cleantext, 
+                          vader_preprocessed_text, lang, author.verified, X, 
+                          ...1,author.username, division, two_or_more_races_inc, 
+                          two_or_more_races_ex, White, Black, Native, Asian, HIPI,
+                          other_race, edu_ov25_somecol_less1, edu_ov25_GED,
+                          edu_ov25_HSdiploma, edu_ov25_assoc, edu_ov25_somecol_nodegree))
+#head(dat)
+```
+
+```{r include = FALSE}
+nas_per_row <- rowSums(is.na(dat)) 
+table(nas_per_row)
+#dat$author.id[rowSums(is.na(dat)) ==105]
+#dat[dat$author.id=="a1959156970",] # this is bc we don't have state info here
+```
+
+```{r}
+summary(dat$total_tweets_on_date)
+#highly left skewed
+```
+
+```{r}
+summary(dat$total_tweets_on_date)
+#highly left skewed
+```
+
+```{r}
+summary(dat$total_tweets_on_date)
+```
+
+the following plots illustrate that there is great variation among users in
+ the number of tweets posted as well as the make up of these tweets in terms
+ of morality, sentiment, and stance on abortion
+
+```{r echo = FALSE}
+set.seed(77)
+random_ids <- sample(dat$author.id, size = 9)
+dat$sentiment = as.factor(dat$sentiment)
+levels(dat$sentiment) = c("negative", "neutral", "positive")
+dat %>% 
+  filter(author.id %in% random_ids)  %>%
+  ggplot(aes(x = sentiment, fill = sentiment)) +
+  geom_bar() +
+  scale_fill_manual(values=c("#91bfdb", "#DEDEDE",  "#ef8a62")) +
+  facet_wrap( ~ author.id, ncol = 3) +
+  coord_flip() +theme_bw()
+
+dat$prolife_prochoice <- as.factor(dat$prolife_prochoice)
+levels(dat$prolife_prochoice) <- c("life", "neutral", "choice")
+
+dat %>% 
+  filter(author.id %in% random_ids)  %>%
+  ggplot(aes(x = prolife_prochoice, fill = prolife_prochoice)) +
+  geom_bar() +
+  scale_fill_manual(values=c("maroon", "lightgray",  "steelblue")) +
+  facet_wrap( ~ author.id, ncol = 3) +
+  coord_flip() +theme_bw()
+
+dat$binary_morality <- as.factor(dat$binary_morality)
+
+levels(dat$binary_morality) <- c("moral", "non-moral")
+
+
+dat %>% 
+  filter(author.id %in% random_ids)  %>%
+  ggplot(aes(x = binary_morality, fill = binary_morality)) +
+  geom_bar() +
+  scale_fill_manual(values=c("thistle", "wheat")) +
+  facet_wrap( ~ author.id, ncol = 3) +
+  coord_flip() +theme_bw()
+```
+
+
+
+
+```{r include = FALSE}
+# 174 days Jan 1-Jun 24 2022, n = 27011
+beforeTweetsPerDay <- dat[dat$beforeOverturn==1,] %>%
+  dplyr::count(date_tw = date_of_tweet) 
+sum(beforeTweetsPerDay$n)
+# 196 days Jun 24 2022 - Dec 31 2022;  201032 tweets
+afterTweetsPerDay <- dat[dat$afterOverturn==1,]  %>%
+  dplyr::count(date_tw = date_of_tweet) 
+#length(unique(dat$date_of_tweet))
+afterTweetsPerDay$date_tw <- as.Date(afterTweetsPerDay$date_tw)
+beforeTweetsPerDay$date_tw <- as.Date(beforeTweetsPerDay$date_tw)
+
+# 370 days
+TweetsPerDay <- dat %>% dplyr::count(date_tw = date_of_tweet) 
+
+#TweetsPerDay$date_tw <- as.Date(TweetsPerDay$date_tw)
+
+proLifeTweetsPerDay <- dat[dat$life==1,] %>% 
+  dplyr::count(date_tw = date_of_tweet) 
+proChoiceTweetsPerDay <- dat[dat$choice==1,] %>% 
+  dplyr::count(date_tw = date_of_tweet) 
+proNeutralTweetsPerDay <- dat[dat$neutral==1,] %>% 
+  dplyr::count(date_tw = date_of_tweet) 
+
+# NAs present for neutral counts, add rows w 0 for appr date
+#proChoiceTweetsPerDay[!proChoiceTweetsPerDay$date_tw %in% proNeutralTweetsPerDay$date_tw,]
+
+# dim(proNeutralTweetsPerDay) #353
+# dim(proLifeTweetsPerDay) #370
+# dim(proChoiceTweetsPerDay) #370
+
+proNeutralTweetsPerDay <- left_join(proChoiceTweetsPerDay, 
+                                    proNeutralTweetsPerDay, join_by(date_tw))
+
+proNeutralTweetsPerDay$n.y <- tidyr::replace_na(proNeutralTweetsPerDay$n.y, 0)
+proNeutralTweetsPerDay <- proNeutralTweetsPerDay %>% dplyr::select(-n.x)
+colnames(proNeutralTweetsPerDay)[2] <- "n"
+
+daily_num_pro <- as.data.frame(
+  cbind(proNeutralTweetsPerDay,
+        "nProChoice" = proChoiceTweetsPerDay$n,
+        "nProLife" = proLifeTweetsPerDay$n))
+daily_num_pro$nNeutral <- daily_num_pro$n
+daily_num_pro$date <- daily_num_pro$date_tw
+daily_num_pro <- daily_num_pro %>% select(-c("date_tw", "n"))
+```
+
+
+```{r echo = FALSE}
+ggplot(daily_num_pro, aes(x = as.Date(date), y = nProChoice, color = "pro-choice")) + 
+  geom_line() + 
+  #geom_vline(xintercept = as.Date("2022-05-02"), color = "red", lty = "dashed") +
+ # geom_vline(xintercept = as.Date("2022-06-24"), color = "red", lty = "dashed") + 
+  ggtitle("Number of tweets per day between January 1, 2022 and January 6, 2023") +
+  ylab("Number of tweets") +
+  xlab("Time")+
+  scale_x_date(breaks = as.Date(c("2022-01-01","2022-02-01", "2022-03-01",
+                                  "2022-04-01", "2022-05-01","2022-06-01",
+                                  "2022-07-01", "2022-08-01", "2022-09-01",
+                                  "2022-10-01","2022-11-01", "2022-12-01",
+                                  "2023-01-01")), 
+               labels = c("Jan 2022", "Feb", "March", "Apr", "May", "June", 
+                          "July", "Aug", "Sep", "Oct", "Nov", "Dec", "Jan 2023")) +
+  theme_bw() +
+  geom_line(aes(y = nNeutral,  color = "neutral")) + 
+  geom_line(aes(y = nProLife, color = "pro-life"))+
+  scale_colour_manual("", 
+                      breaks = c("pro-life", "neutral", "pro-choice"),
+                      values = c("#91bfdb", "black", "#ef8a62")) 
+# May 2 2022: Politico published a leaked draft of the Supreme 
+# Court majority decision to overturn Roe v. Wade 
+# May 12-14: major protests and rallies
+```
+
+
+
+
+```{r echo = FALSE}
+# 52 day windows surrounding the Dobbs leak and the overturn indicated with 
+# dashed lines
+ggplot(TweetsPerDay, aes(x = date_tw, y = n)) + 
+  geom_line() + 
+  geom_vline(xintercept = as.Date("2022-05-03"), color = "blue", lty = "dashed") + 
+   geom_vline(xintercept = as.Date("2022-06-24"), color = "red", lty = "dashed") + 
+     geom_vline(xintercept = as.Date("2022-03-12"), color = "navy", lty = "dashed") + 
+     geom_vline(xintercept = as.Date("2022-08-15"), color = "darkred", lty = "dashed") + 
+  ggtitle("Tweets per day between January 1, 2022 and January 6, 2023") +
+  ylab("Number of tweets") +
+  xlab("Time")+
+  scale_x_date(breaks = as.Date(c("2022-01-01","2022-02-01", "2022-03-01",
+                                  "2022-04-01", "2022-05-01","2022-06-01",
+                                  "2022-07-01", "2022-08-01", "2022-09-01",
+                                  "2022-10-01","2022-11-01", "2022-12-01",
+                                  "2023-01-01")), 
+               labels = c("Jan 2022", "Feb", "March", "Apr", "May", "June", 
+                          "July", "Aug", "Sep", "Oct", "Nov", "Dec", "Jan 2023")) +
+  theme_bw()
+```
+
+```{r}
+# before & after sentiment comparison
+
+round(prop.table(table(dat$sentiment, dat$prolife_prochoice)),3)
+round(prop.table(table(dat$binary_morality, dat$prolife_prochoice)),3)
+round(prop.table(table(dat$sentiment, dat$binary_morality)),3)
+
+```
+
+
+
+```{r message = FALSE, include = FALSE}
+bef_af_rvw_s <- dat %>% 
+  group_by(beforeOverturn, sentiment) %>%
+  summarise(n=n()) %>% mutate(prop=n/sum(n))
+
+bef_af_rvw_s <- as.data.frame(bef_af_rvw_s)
+bef_af_rvw_s$beforeOverturn <- as.factor(bef_af_rvw_s$beforeOverturn)
+levels(bef_af_rvw_s$beforeOverturn) <- c('Before Overturn','After Overturn')
+
+
+rvw_s_be <- dat %>% filter(beforeOverturn==1) %>%
+  group_by(prolife_prochoice, sentiment) %>%
+  summarise(n=n()) %>% mutate(prop=n/sum(n))
+rvw_s_af <- dat %>% filter(beforeOverturn==0) %>%
+  group_by(prolife_prochoice, sentiment) %>%
+  summarise(n=n()) %>% mutate(prop=n/sum(n))
+
+rvw_s_be <- as.data.frame(rvw_s_be)
+rvw_s_be$prolife_prochoice <- as.factor(rvw_s_be$prolife_prochoice)
+levels(rvw_s_be$prolife_prochoice) <- c('life', 'neutral', 'choice')
+rvw_s_af <- as.data.frame(rvw_s_af)
+rvw_s_af$prolife_prochoice <- as.factor(rvw_s_af$prolife_prochoice)
+levels(rvw_s_af$prolife_prochoice) <- c('life', 'neutral', 'choice')
+```
+```{r}
+par(mfrow = c(2,1))
+ggplot(rvw_s_be, aes(sentiment, prop, fill = sentiment)) + 
+  geom_bar(stat = "identity") +
+  scale_fill_manual(values=c("#91bfdb", "#DEDEDE",  "#ef8a62")) +
+  labs(fill = "sentiment")+
+  ylab("Proportion of tweets")+
+facet_wrap(~prolife_prochoice) + theme_bw() + 
+  geom_text(aes(label = round(prop, 3)),
+            position = position_dodge(width=0.9), vjust = -0.25)
+
+ggplot(rvw_s_af, aes(sentiment, prop, fill = sentiment)) + 
+  geom_bar(stat = "identity") +
+  scale_fill_manual(values=c("#91bfdb", "#DEDEDE",  "#ef8a62")) +
+  labs(fill = "sentiment")+
+  ylab("Proportion of tweets")+
+facet_wrap(~prolife_prochoice) + theme_bw() + 
+  geom_text(aes(label = round(prop, 3)),
+            position = position_dodge(width=0.9), vjust = -0.25)
+
+# counts of tweets before and after overturn by sentiment
+# sent_counts <- data.frame(cbind(bef_af_rvw_s[1:3, "n"], bef_af_rvw_s[4:6, "n"]))
+# rownames(sent_counts) <- c("negative", "neutral", "positive")
+# colnames(sent_counts) <- levels(bef_af_rvw_s$beforeOverturn)
+```
+
+
+
+```{r warning = FALSE, echo = FALSE}
+# proportions of sentiment across the 52 day windows
+#table(dat$pre52_Dobbs) # 238849 0,   7042 1
+#table(dat$btwn52_Dobbs_Overturn) # 222166 0,   23725 1
+#table(dat$post52_Overturn) # 106032 0, 116134 
+
+dat$windows_52days <- NA
+dat[dat$pre52_Dobbs==1,"windows_52days"] <- "pre-Dobbs leak"
+dat[dat$btwn52_Dobbs_Overturn==1,"windows_52days"] <- "between leak and overturn"
+dat[dat$post52_Overturn==1,"windows_52days"] <- "post-overturn"
+table(dat$windows_52days)
+sum(is.na(dat$windows_52days))
+
+dat52 <- dat[!is.na(dat$windows_52days),]
+#dim(dat52) #146901    138
+prop_windows_s <- dat52 %>% 
+  group_by(windows_52days, sentiment) %>%
+  summarise(n=n()) %>% mutate(prop=n/sum(n))
+
+prop_windows_s <- as.data.frame(prop_windows_s)
+prop_windows_s$windows_52days <- as.factor(prop_windows_s$windows_52days)
+levels(prop_windows_s$windows_52days) <- c('pre-Dobbs leak','between leak and overturn', 'post-overturn')
+
+ggplot(prop_windows_s, aes(sentiment, prop, fill = sentiment)) + 
+  geom_bar(stat = "identity") +
+  scale_fill_manual(values=c("#91bfdb", "#DEDEDE",  "#ef8a62")) +
+  labs(fill = "sentiment")+
+  ylab("Proportion of tweets")+
+facet_wrap(~windows_52days) + theme_bw() + 
+  geom_text(aes(label = round(prop, 3)),
+            position = position_dodge(width=0.9), vjust = -0.25)
+```
+
+```{r warning = FALSE, include = FALSE}
+# proportions of stance on abortion across the 52 day windows
+
+# prop_windows_a <- dat52 %>% 
+#   group_by(windows_52days, sentiment, prolife_prochoice) %>%
+#   summarise(n=n()) %>% mutate(prop=n/sum(n))
+# prop_windows_b <- dat52 %>% 
+#   group_by(windows_52days, prolife_prochoice) %>%
+#   summarise(n=n()) %>% mutate(prop_ab=n/sum(n))
+# 
+# 
+# prop_windows_a <- as.data.frame(prop_windows_a)
+# prop_windows_a$windows_52days <- as.factor(prop_windows_a$windows_52days)
+# levels(prop_windows_a$windows_52days) <- c('pre-Dobbs leak','between leak and overturn', 'post-overturn')
+# 
+# prop_windows_c <- prop_windows_a %>% select(-c("n"))
+# prop_windows_d <- prop_windows_b %>% select(-c("n"))
+# prop_windows_e <- left_join(prop_windows_c, prop_windows_d)
+# 
+# sss <- dat52[, c("windows_52days","prolife_prochoice", "sentiment")]
+# ggplot(sss, aes(x = prolife_prochoice, stat = after_stat_prop,  fill = sentiment)) + 
+#   geom_bar(stat = "count", position = "stack") +
+#   scale_fill_manual(values=c("#91bfdb", "#DEDEDE",  "#ef8a62")) +
+#   labs(fill = "sentiment")+
+#   ylab("Proportion of tweets")+
+# facet_wrap(~windows_52days) + theme_bw() + 
+#   geom_text(aes(label = round(prop, 3)),
+#             position = position_stack(vjust=0.5), size = 3) + 
+#   ggtitle('stance on abortion of tweets in the 52 day windows around the leak and the overturn ')
+# 
+# ggplot(sss, aes(x = prolife_prochoice)) +
+#  geom_bar(aes(y=..count../sum(..count..),fill = sentiment), position = position_stack(reverse = TRUE)) +
+#  theme(legend.position = "top")+facet_wrap(~windows_52days)
+# # currently plotting the proportions out of the whole dataset, but should be out of the facet variable subset
+```
+
+
+
+
+```{r include = FALSE}
+# compute proportions of sentiment labels per state before/ after the
+#overturn and in general
+state_sent_props <- dat %>% 
+  group_by(state, sentiment) %>%
+  summarise(n=n()) %>% mutate(prop=n/sum(n))
+state_sent_props_bef <- dat %>% 
+  filter(beforeOverturn == 1) %>%
+  group_by(state, sentiment) %>%
+  summarise(n=n()) %>% mutate(prop=n/sum(n))
+state_sent_props_af <- dat %>% 
+  filter(afterOverturn == 1) %>%
+  group_by(state, sentiment) %>%
+  summarise(n=n()) %>% mutate(prop=n/sum(n))
+
+# create lists for the regions
+us_regions <- read.csv("Data/external/us_census_bureau_regions_and_divisions.csv")
+us_regions <- us_regions %>% rename(state = State.Code, region = Region, 
+                                    division = Division)
+midwest <- us_regions[us_regions$region=="Midwest", "state"]
+northeast <- us_regions[us_regions$region=="Northeast", "state"]
+south <- us_regions[us_regions$region=="South", "state"]
+west <- us_regions[us_regions$region=="West", "state"]
+```
+
+
+```{r message = FALSE, echo = FALSE}
+
+no_na_st <- dat[!is.na(dat$state),]
+
+
+# df of counts by region and before/after overturn
+region_counts_befAf <- no_na_st %>% 
+  group_by(region, beforeOverturn) %>%
+  summarise(n_region=n()) 
+
+# make tables 
+table_of_props_stance_by <- function(df, conststr, capt) {
+  construct_cts <- df %>% 
+    group_by(region, beforeOverturn, df[,conststr]) %>%
+    summarise(n=n()) 
+  
+out <- df %>% 
+    group_by(region, beforeOverturn,prolife_prochoice, df[,conststr]) %>%
+    summarise(n=n()) %>%
+    mutate(prop=round(n/sum(n),2)) %>% 
+    select(-n) %>%
+    left_join(region_counts_befAf) %>%
+    left_join(construct_cts) #%>%
+    #kableExtra::kable(caption=capt)
+  
+  #write.csv(out, paste0(conststr, ".csv"))
+  return(out)
+}
+
+capt <- " before and after the overturn by stance on abortion and by region"
+captl<-paste0("loyalty ", capt)
+captf<-paste0("fairness ", capt)
+captc<-paste0("care ", capt)
+captp<-paste0("purity ", capt)
+captbin<-paste0("morality ", capt)
+capta<-paste0("authority ", capt)
+capts<-paste0("sentiment ", capt)
+
+print(captl)
+table_of_props_stance_by(conststr  = "loyalty", df = no_na_st, 
+                         capt = captl)
+print(captf)
+table_of_props_stance_by(conststr  = "fairness", df = no_na_st, 
+                         capt = captf)
+print(capta)
+table_of_props_stance_by(conststr  = "authority", df = no_na_st, 
+                         capt = capta )
+print(captc)
+table_of_props_stance_by(conststr  = "care", df = no_na_st, 
+                       capt = captc)
+print(captp)
+table_of_props_stance_by(conststr  = "purity", df = no_na_st, 
+                         capt = captp)
+print(capts)
+table_of_props_stance_by(conststr  = "sentiment", df = no_na_st, 
+                         capt = capts)
+print(captbin)
+table_of_props_stance_by(conststr  = "binary_morality", df = no_na_st, 
+                         capt = captbin)
+```
+
+
+
+
+
+```{r include = FALSE}
+barplot_state_sentiment_by_region <- function(propdf,
+                                              listofstates, region, timeline) {
+ggplot(propdf[propdf$state %in% listofstates,], 
+       aes(sentiment, prop, fill = sentiment)) +
+  geom_bar(stat = "identity") +
+  scale_fill_manual(values=c("#91bfdb", "#DEDEDE",  "#ef8a62")) +
+  labs(fill = "sentiment")+
+  ylab("Proportion of tweets")+
+facet_wrap(~state) + 
+  theme_bw() + theme(axis.text.x = element_blank())+
+  geom_text(aes(label = round(prop,3)), 
+            position = position_dodge(width=0.9), vjust=1.25, size = 3) + 
+  scale_y_continuous(limits = c(0,1)) +
+  ggtitle(paste0("Sentiment distribution of tweets in ", region,
+                 " states ", timeline))+ theme(plot.title = element_text(size=11))
+
+}
+
+time_comp <- "(Jan 1 2022 - Jan 6 2023)"
+time_bf <- "(Jan 1 2022 - June 24 2022)" 
+time_af <-"(June 24 2022 - Jan 6 2023)"
+```
+
+```{r include = FALSE}
+## Northeastern states
+barplot_state_sentiment_by_region(state_sent_props_bef, 
+                                  northeast, 
+                                  "northeastern", 
+                                  time_bf)
+
+barplot_state_sentiment_by_region(state_sent_props_af, 
+                                  northeast, 
+                                  "northeastern", 
+                                  time_af)
+```
+
+
+```{r include = FALSE}
+## Midwestern states
+barplot_state_sentiment_by_region(state_sent_props_bef, 
+                                  midwest, 
+                                  "midwestern", 
+                                  time_bf)
+
+barplot_state_sentiment_by_region(state_sent_props_af, 
+                                  midwest, 
+                                  "midwestern", 
+                                  time_af)
+```
+
+```{r include = FALSE}
+## Southern states
+barplot_state_sentiment_by_region(state_sent_props_bef, 
+                                  south, 
+                                  "southern", 
+                                  time_bf)
+
+barplot_state_sentiment_by_region(state_sent_props_af, 
+                                  south, 
+                                  "southern", 
+                                  time_af)
+```
+
+
+
+```{r include = FALSE}
+## Western states
+barplot_state_sentiment_by_region(state_sent_props_bef, 
+                                  west, 
+                                  "western", 
+                                  time_bf)
+
+barplot_state_sentiment_by_region(state_sent_props_af, 
+                                  west, 
+                                  "western", 
+                                  time_af)
+```
+
+
+
+
+```{r include = FALSE}
+## Distribution of tweet sentiment by region (Jan 1 2022-Jan 6 2023)
+barplot_state_sentiment_by_region(state_sent_props, 
+                                  northeast, 
+                                  "northeastern", 
+                                  time_comp)
+barplot_state_sentiment_by_region(state_sent_props, 
+                                  midwest, 
+                                  "midwestern", 
+                                  time_comp)
+barplot_state_sentiment_by_region(state_sent_props, 
+                                  south, 
+                                  "southern", 
+                                  time_comp)
+barplot_state_sentiment_by_region(state_sent_props, 
+                                  west, 
+                                  "western", 
+                                  time_comp)
+```
+
+
+
+
+
+

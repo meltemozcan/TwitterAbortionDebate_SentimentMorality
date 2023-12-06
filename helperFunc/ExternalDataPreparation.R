@@ -35,6 +35,7 @@ censusdatw <- read.csv('external/ACS_2021_censusData.csv') %>% select(-X) # 51 x
 # Party Affiliation Pew 2014
 partyaff2014 <- readxl::read_xlsx('external/PartyAffiliationByState_Pew2014.xlsx')
 
+#https://news.gallup.com/poll/247025/democratic-states-exceed-republican-states-four-2018.aspx
 ideology2018 <- readxl::read_xlsx('external/politicalIdeology2018Gallup.xlsx')
 ideology2018 <- left_join(st, ideology2018, by = join_by(state))
 ideology2018 <- ideology2018 %>% select(-c(state, N))
