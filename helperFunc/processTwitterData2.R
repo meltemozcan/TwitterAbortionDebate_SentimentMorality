@@ -56,8 +56,8 @@ processTwitterData2 <- function(ds) {
     ds <- ds %>% select(-c(X))
   }
   
-  ds <- ds %>% select(- c(referenced_tweets.replied_to.id, conversation_id,
-                          author.id.string, id_str))
+#  ds <- ds %>% select(- c(referenced_tweets.replied_to.id, conversation_id,
+#                          author.id.string, id_str))
   
   ds <- ds %>% arrange(created_at, author.id, state, city) 
   
@@ -68,6 +68,10 @@ processTwitterData2 <- function(ds) {
   ds$negative <- as.integer(ds$sentiment=="negative")
   
   ds <- ds[ds$prolife_prochoice != "throw_out",]
+  
+  ds$choice <- as.integer(ds$prolife_prochoice=="choice")
+  ds$ab_neutral <- as.integer(ds$prolife_prochoice=="neutral")
+  ds$life <- as.integer(ds$prolife_prochoice=="life")
   
   return(ds)
 }

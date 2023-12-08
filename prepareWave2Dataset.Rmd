@@ -23,6 +23,7 @@ library(lubridate)
  source('/Users/meltemozcan/Desktop/PSYC 626/TwitterAbortion/helperFunc/clean_tweet.R')
  source('/Users/meltemozcan/Desktop/PSYC 626/TwitterAbortion/helperFunc/leak_overturn_52daywindows.R')
  source('/Users/meltemozcan/Desktop/PSYC 626/TwitterAbortion/helperFunc/processTwitterData2.R')
+ source('/Users/meltemozcan/Desktop/PSYC 626/TwitterAbortion/helperFunc/create_window_counts.R')
 dt <- readr::read_csv('Data/old/wave2_with_all_labels.csv')
 
 dt$author.id <- dt$author.id.string
@@ -43,17 +44,13 @@ length(unique(dt$author.id))
 length(unique(dat22$author.id))
 length(unique(dat22$id))
 ```
-```{r}
-dat22$choice <- as.integer(dat22$prolife_prochoice=="choice")
-dat22$neutral <- as.integer(dat22$prolife_prochoice=="neutral")
-dat22$life <- as.integer(dat22$prolife_prochoice=="life")
-```
+
 
 
 
 
 ```{r}
-#write.csv(dat22,"final_wave2.csv")
+#write.csv(dat22,"final_wave2_upd.csv")
 ```
 
 

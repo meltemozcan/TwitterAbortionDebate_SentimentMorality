@@ -1,0 +1,432 @@
+---
+title: "Negative Binomial Models Predicting Change Across Three Time Windows  "
+output: pdf_document
+---
+
+```{r warning = FALSE, message=FALSE}
+library(dplyr)
+library(lubridate)
+library(ggplot2)
+library(glmmTMB)
+library(dplyr)
+library(tidyr)
+```
+
+```{r}
+dat <- readr::read_csv("Data/final_wave2_upd.csv")
+# total tweets by each author over the full time period
+total_num_tweets_per_auth <- dat %>% 
+    group_by(author.id) %>% 
+    summarise(num_tweets_by_author = n_distinct(id)) %>% 
+    arrange(desc(num_tweets_by_author)) 
+#total_num_tweets_per_auth %>% head()
+#summary(total_num_tweets_per_auth$num_tweets_by_author)
+
+length(unique(dat$author.id)) #72305 unique authors
+length(unique(dat$id)) #245891 unique records
+```
+
+
+Goal: modeling the daily counts of ONE of (pro-life/choice/neutral) tweets across the three wind
+
+y = totaltweetsper day but make it total_life_perday etc.
+
+```{r}
+source('helperFunc/create_window_counts.R')
+wind <- create_window_counts(dat)
+dim(wind) # 146901 rows
+table(wind$pre52_Dobbs) #7042 tweets
+table(wind$btwn52_Dobbs_Overturn)  # 23725
+table(wind$post52_Overturn)#116134
+table(wind$positive)
+table(wind$neutral)
+table(wind$negative)
+table(wind$life)
+table(wind$choice)
+table(wind$ab_neutral)
+```
+
+```{r}
+#write.csv(dat,"wave2_with_wind.csv")
+```
+
+### Examine mean-variance relationship
+```{r warning = FALSE}
+windsub <- wind %>% group_by(state, author.id) %>% 
+  dplyr::select(state, author.id, date_of_tweet, pre52_Dobbs, 
+                btwn52_Dobbs_Overturn, post52_Overturn, region,
+                abortionRate15_44_in2020_per100000,dayofweek,
+               medage, medianAge_M, medianAge_F, total, ratio_F14to44_totalF, 
+               ratio_F14to44_totalM, ratio_F14to44_male_over65, FM_ratio,
+               white_nonwhite_ratio, hisp_nonhisp_ratio, medincome,
+               StrongDem2018_01,
+               StrongRep2018_01, CompetitiveDemRep2018_01, edu_F_overBA,
+               edu_M_overBA, edu_ov25HS_GED,edu_ov25MAprofPhD, TrumpPerc2020, 
+               BidenPerc2020,
+               veryReligious2017, ST_clin_total,ST_clin_prov_AB22,
+               life_total_on_date, neu_total_on_date, 
+               choice_total_on_date, sentneu_total_on_date, neg_total_on_date,
+               pos_total_on_date, total_tweets_on_date, life, ab_neutral,choice, 
+               positive, neutral, negative, binary_morality, moral_total_on_date,
+               nonmoral_total_on_date)
+        
+ dim(windsub)    #146901     44, but likely with duplicate rows
+ 
+ window <- windsub %>% distinct() # essentially collapsing from tweet-day level to
+ # author-day level
+ dim(window) # 119212 
+  
+ window %>% group_by(state) %>% summarise(n()) # counts of authors per state 
+   # in the three windows
+ 
+ 
+summ <-  window %>% group_by(state) %>%
+    summarise(life_mean=mean(life_total_on_date, na.rm = TRUE),
+              life_var=var(life_total_on_date, na.rm = TRUE),
+              choice_mean=mean(choice_total_on_date, na.rm = TRUE),
+              choice_var=var(choice_total_on_date, na.rm = TRUE),
+              ab_neu_mean=mean(neu_total_on_date, na.rm = TRUE),
+              ab_neu_var=var(neu_total_on_date, na.rm = TRUE),
+              pos_mean=mean(pos_total_on_date, na.rm = TRUE),
+              pos_var=var(pos_total_on_date, na.rm = TRUE),
+              neg_mean=mean(neg_total_on_date, na.rm = TRUE),
+              neg_var=var(neg_total_on_date, na.rm = TRUE),
+              sentneu_mean=mean(sentneu_total_on_date, na.rm = TRUE),
+              sentneu_var=var(sentneu_total_on_date, na.rm = TRUE),
+              moral_mean=mean(moral_total_on_date, na.rm = TRUE),
+              moral_var=var(moral_total_on_date, na.rm = TRUE),
+              nonmoral_mean=mean(nonmoral_total_on_date, na.rm = TRUE),
+              nonmoral_var=var(nonmoral_total_on_date, na.rm = TRUE)
+              )
+summ$life_var <- tidyr::replace_na(summ$life_var, 0)
+summ$choice_var <- tidyr::replace_na(summ$choice_var, 0)
+summ$ab_neu_var <- tidyr::replace_na(summ$ab_neu_var, 0)
+summ$neg_var <- tidyr::replace_na(summ$neg_var, 0)
+summ$pos_var <- tidyr::replace_na(summ$pos_var, 0)
+summ$sentneu_var <- tidyr::replace_na(summ$sentneu_var, 0)
+summ$moral_var <- tidyr::replace_na(summ$moral_var, 0)
+summ$nonmoral_var <- tidyr::replace_na(summ$nonmoral_var, 0)
+```
+
+
+```{r message = FALSE, warning = FALSE}
+ggplot(summ, aes(x=life_mean, y=life_var)) + geom_line() +
+  geom_smooth(method="lm",formula=y~x-1,colour="orange", lwd = .5)+  # linear, NB1
+  geom_smooth(method="lm",formula=y~ I(x^2)-1,colour="purple", lwd = .5) + # quadratic, NB2
+  geom_abline(a=0,b=1,lty=2) + # var can't be below 0
+  theme_bw()+
+  ggtitle("Mean-variance relationship of the daily pro-life tweet counts for authors")
+
+
+ggplot(summ, aes(x=choice_mean, y=choice_var)) + geom_line() +
+  geom_smooth(method="lm",formula=y~x-1,colour="orange", lwd = .5)+  # linear, NB1
+  geom_smooth(method="lm",formula=y~ I(x^2)-1,colour="purple", lwd = .5) + # quadratic, NB2
+  geom_abline(a=0,b=1,lty=2) + # var can't be below 0
+  theme_bw()+
+  ggtitle("Mean-variance relationship of the daily pro-choice tweet counts for authors")
+
+ggplot(summ, aes(x=ab_neu_mean, y=ab_neu_var)) + geom_line() +
+  geom_smooth(method="lm",formula=y~x-1,colour="orange", lwd = .5)+  # linear, NB1
+  geom_smooth(method="lm",formula=y~ I(x^2)-1,colour="purple", lwd = .5) + # quadratic, NB2
+  geom_abline(a=0,b=1,lty=2) + # var can't be below 0
+  theme_bw()+
+  ggtitle("Mean-variance relationship of the daily ab-neutral tweet counts for authors")
+
+
+ggplot(summ, aes(x=pos_mean, y=pos_var)) + geom_line() +
+  geom_smooth(method="lm",formula=y~x-1,colour="orange", lwd = .5)+  # linear, NB1
+  geom_smooth(method="lm",formula=y~ I(x^2)-1,colour="purple", lwd = .5) + # quadratic, NB2
+  geom_abline(a=0,b=1,lty=2) + # var can't be below 0
+  theme_bw()+
+  ggtitle("Mean-variance relationship of the daily positive tweet counts for authors")
+
+
+ggplot(summ, aes(x=neg_mean, y=neg_var)) + geom_line() +
+  geom_smooth(method="lm",formula=y~x-1,colour="orange", lwd = .5)+  # linear, NB1
+  geom_smooth(method="lm",formula=y~ I(x^2)-1,colour="purple", lwd = .5) + # quadratic, NB2
+  geom_abline(a=0,b=1,lty=2) + # var can't be below 0
+  theme_bw()+
+  ggtitle("Mean-variance relationship of the daily negative tweet counts for authors")
+ggplot(summ, aes(x=sentneu_mean, y=sentneu_var)) + geom_line() +
+  geom_smooth(method="lm",formula=y~x-1,colour="orange", lwd = .5)+  # linear, NB1
+  geom_smooth(method="lm",formula=y~ I(x^2)-1,colour="purple", lwd = .5) + # quadratic, NB2
+  geom_abline(a=0,b=1,lty=2) + # var can't be below 0
+  theme_bw()+
+  ggtitle("Mean-variance relationship of the daily sent-neutral tweet counts for authors")
+
+ggplot(summ, aes(x=moral_mean, y=moral_var)) + geom_line() +
+  geom_smooth(method="lm",formula=y~x-1,colour="orange", lwd = .5)+  # linear, NB1
+  geom_smooth(method="lm",formula=y~ I(x^2)-1,colour="purple", lwd = .5) + # quadratic, NB2
+  geom_abline(a=0,b=1,lty=2) + # var can't be below 0
+  theme_bw()+
+  ggtitle("Mean-variance relationship of the daily negative tweet counts for authors")
+ggplot(summ, aes(x=sentneu_mean, y=sentneu_var)) + geom_line() +
+  geom_smooth(method="lm",formula=y~x-1,colour="orange", lwd = .5)+  # linear, NB1
+  geom_smooth(method="lm",formula=y~ I(x^2)-1,colour="purple", lwd = .5) + # quadratic, NB2
+  geom_abline(a=0,b=1,lty=2) + # var can't be below 0
+  theme_bw()+
+  ggtitle("Mean-variance relationship of the daily moral tweet counts for authors")
+
+
+# Poisson not appropriate as v!=m, nb better
+```
+
+
+## Abortion Stance
+### NB_choice_M1
+ 
+```{r}
+tic <- Sys.time()
+NB_choice_M1 <- glmmTMB(choice_total_on_date ~ btwn52_Dobbs_Overturn + 
+                           post52_Overturn+ 
+                           ST_clin_total + ST_clin_prov_AB22+
+                           region +
+                           dayofweek+
+                           medage + 
+                           log(medincome) + 
+                           ratio_F14to44_totalF +
+                           ratio_F14to44_totalM +
+                           hisp_nonhisp_ratio +
+                           white_nonwhite_ratio +
+                           edu_ov25HS_GED +
+                           edu_F_overBA +
+                           StrongRep2018_01 +
+                           StrongDem2018_01 +
+                          veryReligious2017 + 
+                          TrumpPerc2020  +  (1 | author.id),
+                           data = window, family = nbinom2(link = "log"))
+tac <- Sys.time()
+tic-tac 
+#pre Dobbs is the intercept
+summary(NB_choice_M1) # not enough degrees of freedom for state, rank deficient
+
+NB_choice_M1_CIs<- round(exp(confint(NB_choice_M1)),3)
+
+```
+
+
+
+### NB_life_M1
+
+```{r}
+tic <- Sys.time()
+NB_life_M1<- glmmTMB(life_total_on_date ~ btwn52_Dobbs_Overturn + 
+                          post52_Overturn+
+                          ST_clin_total + ST_clin_prov_AB22+
+                           region +dayofweek +
+                           medage + 
+                           log(medincome) + 
+                           ratio_F14to44_totalF +
+                           ratio_F14to44_totalM +
+                           hisp_nonhisp_ratio +
+                           white_nonwhite_ratio +
+                           edu_ov25HS_GED +
+                           edu_F_overBA +
+                           StrongRep2018_01 +
+                           StrongDem2018_01 +
+                           veryReligious2017 + 
+                           TrumpPerc2020 + (1 | author.id),
+                           data = window, family = nbinom2(link = "log"))
+tac <- Sys.time() #1.029059
+tic-tac
+#pre Dobbs is the intercept
+summary(NB_life_M1)
+NB_life_M1_CIs<- round(exp(confint(NB_life_M1)),3)
+```
+
+## Sentiment
+
+### NB_neutral_M1
+
+```{r}
+tic <- Sys.time()
+NB_ab_neutral_M1<-glmmTMB(neu_total_on_date ~ btwn52_Dobbs_Overturn + 
+                         post52_Overturn+
+                          ST_clin_total + ST_clin_prov_AB22+
+                           region + dayofweek+
+                           medage + 
+                           log(medincome) + 
+                           ratio_F14to44_totalF +
+                           ratio_F14to44_totalM +
+                           hisp_nonhisp_ratio +
+                           white_nonwhite_ratio +
+                           edu_ov25HS_GED +
+                           edu_F_overBA +
+                           StrongRep2018_01 +
+                           StrongDem2018_01 +
+                           veryReligious2017 + 
+                           TrumpPerc2020 + (1 | author.id),
+                           data = window, family = nbinom2(link = "log"))
+tac <- Sys.time() # 1.102229 mins
+tic-tac
+summary(NB_ab_neutral_M1)
+
+NB_ab_neutral_M1_CIs <- round(exp(confint(NB_ab_neutral_M1)),3)
+```
+
+```{r}
+
+cbind(NB_life_M1_CIs[,c(3, 1, 2)], 
+      NB_ab_neutral_M1_CIs[,c(3, 1, 2)], 
+      NB_choice_M1_CIs[,c(3, 1, 2)])
+```
+
+### NB_sentneutral_M1
+
+```{r}
+tic <- Sys.time()
+NB_sentneutral_M1<-glmmTMB(sentneu_total_on_date ~ btwn52_Dobbs_Overturn + 
+                         post52_Overturn+
+                          ST_clin_total + ST_clin_prov_AB22+
+                           region +dayofweek+
+                           medage + 
+                           log(medincome) + 
+                           ratio_F14to44_totalF +
+                           ratio_F14to44_totalM +
+                           hisp_nonhisp_ratio +
+                           white_nonwhite_ratio +
+                           edu_ov25HS_GED +
+                           edu_F_overBA +
+                           StrongRep2018_01 +
+                           StrongDem2018_01 +
+                           veryReligious2017 + 
+                           TrumpPerc2020  + (1 | author.id),
+                           data = window, family = nbinom2(link = "log"))
+tac <- Sys.time() 
+tic-tac
+summary(NB_sentneutral_M1)
+
+NB_sentneutral_M1_CIs <- round(exp(confint(NB_sentneutral_M1)),3)
+```
+
+
+
+### NB_positive_M1
+
+```{r}
+tic <- Sys.time()
+NB_positive_M1<-glmmTMB(pos_total_on_date ~ btwn52_Dobbs_Overturn + 
+                         post52_Overturn+
+                          ST_clin_total + ST_clin_prov_AB22+
+                           region +dayofweek+
+                           medage + 
+                           log(medincome) + 
+                           ratio_F14to44_totalF +
+                           ratio_F14to44_totalM +
+                           hisp_nonhisp_ratio +
+                           white_nonwhite_ratio +
+                           edu_ov25HS_GED +
+                           edu_F_overBA +
+                           StrongRep2018_01 +
+                           StrongDem2018_01 +
+                           veryReligious2017 + 
+                           TrumpPerc2020 + (1 | author.id),
+                           data = window, family = nbinom2(link = "log"))
+tac <- Sys.time() 
+tic-tac
+summary(NB_positive_M1)
+
+NB_positive_M1_CIs <- round(exp(confint(NB_positive_M1)),3)
+```
+
+### NB_negative_M1
+
+```{r}
+tic <- Sys.time()
+NB_negative_M1<-glmmTMB(neg_total_on_date ~ btwn52_Dobbs_Overturn + 
+                         post52_Overturn+
+                          ST_clin_total + ST_clin_prov_AB22+
+                           region +dayofweek+
+                           medage + 
+                           log(medincome) + 
+                           ratio_F14to44_totalF +
+                           ratio_F14to44_totalM +
+                           hisp_nonhisp_ratio +
+                           white_nonwhite_ratio +
+                           edu_ov25HS_GED +
+                           edu_F_overBA +
+                           StrongRep2018_01 +
+                           StrongDem2018_01 +
+                           veryReligious2017 + 
+                           TrumpPerc2020 + (1 | author.id),
+                           data = window, family = nbinom2(link = "log"))
+tac <- Sys.time() 
+tic-tac
+summary(NB_negative_M1)
+
+NB_negative_M1_CIs <- round(exp(confint(NB_negative_M1)),3)
+```
+
+
+```{r}
+cbind(NB_negative_M1_CIs[,c(3, 1, 2)], 
+      NB_sentneutral_M1_CIs[,c(3, 1, 2)], 
+      NB_positive_M1_CIs[,c(3, 1, 2)])
+```
+
+
+## Morality
+
+### NB_moral_M1
+
+```{r}
+tic <- Sys.time()
+NB_moral_M1 <- glmmTMB(moral_total_on_date ~ btwn52_Dobbs_Overturn + 
+                          post52_Overturn+
+                          ST_clin_total + ST_clin_prov_AB22+
+                           region + dayofweek+
+                           medage + 
+                           log(medincome) + 
+                           ratio_F14to44_totalF +
+                           ratio_F14to44_totalM +
+                           hisp_nonhisp_ratio +
+                           white_nonwhite_ratio +
+                           edu_ov25HS_GED +
+                           edu_F_overBA +
+                           StrongRep2018_01 +
+                           StrongDem2018_01 +
+                           veryReligious2017 + 
+                           TrumpPerc2020 + (1 | author.id),
+                           data = window, family = nbinom2(link = "log"))
+tac <- Sys.time() 
+tic-tac
+summary(NB_moral_M1)
+
+NB_moral_M1_CIs <- round(exp(confint(NB_moral_M1)),3)
+```
+
+
+### NB_nonmoral_M1
+
+```{r}
+tic <- Sys.time()
+NB_nonmoral_M1<-glmmTMB(nonmoral_total_on_date ~ btwn52_Dobbs_Overturn + 
+                           post52_Overturn+
+                           ST_clin_total + ST_clin_prov_AB22+
+                           region +dayofweek+
+                           medage + 
+                           log(medincome) + 
+                           ratio_F14to44_totalF +
+                           ratio_F14to44_totalM +
+                           hisp_nonhisp_ratio +
+                           white_nonwhite_ratio +
+                           edu_ov25HS_GED +
+                           edu_F_overBA +
+                           StrongRep2018_01 +
+                           StrongDem2018_01 +
+                           veryReligious2017 + 
+                           TrumpPerc2020 + (1 | author.id),
+                           data = window, family = nbinom2(link = "log"))
+tac <- Sys.time() 
+tic-tac
+summary(NB_nonmoral_M1)
+
+NB_nonmoral_M1_CIs <- round(exp(confint(NB_nonmoral_M1)),3)
+```
+
+```{r}
+cbind(NB_moral_M1_CIs[,c(3, 1, 2)], 
+      NB_nonmoral_M1_CIs[,c(3, 1, 2)])
+```
+
+
