@@ -1,0 +1,231 @@
+---
+title: "Tweet level morality, stance, sentiment - logistic random coefficient model"
+author: "Meltem Ozcan"
+date: "2023-12-09"
+output: pdf_document
+---
+
+```{r warning = FALSE, message=FALSE}
+library(dplyr)
+library(lubridate)
+library(ggplot2)
+library(glmmTMB)
+library(dplyr)
+library(tidyr)
+library(lme4)
+```
+
+```{r warning = FALSE, message = FALSE}
+dat <- readr::read_csv("Data/final_wave2_upd.csv")
+dat$dayofweek <- as.factor(dat$dayofweek)
+levels(dat$dayofweek) <- c("M", "Tue", "W", "Thu", "F", "Sat", "Sun")
+```
+
+
+```{r}
+dat$life <- factor(dat$life, ordered = FALSE)
+dat$care <- factor(dat$care, ordered = FALSE)
+dat$fairness <- factor(dat$fairness, ordered = FALSE)
+dat$authority <- factor(dat$authority, ordered = FALSE)
+dat$loyalty <- factor(dat$loyalty, ordered = FALSE)
+dat$purity <- factor(dat$purity, ordered = FALSE)
+dat$binary_morality <- factor(dat$binary_morality, ordered = FALSE)
+dat$sentiment <- factor(dat$sentiment, ordered = FALSE)
+
+dat$windows <- ""
+dat[dat$pre52_Dobbs==1, "windows"] <- "pre-Dobbs"
+dat[dat$post52_Overturn==1, "windows"]<- "post-overturn"
+dat$windows <- ordered(as.factor( dat$windows), 
+                       c("pre-Dobbs", "post-Dobbs & pre-overturn", "post-overturn"))
+```
+
+
+```{r}
+maxes <-dat %>% group_by(author.id, date_of_tweet) %>% filter(nth_tweet_on_date==max(nth_tweet_on_date))
+summed_w_nth <- maxes %>% arrange(author.id) %>%
+  group_by(author.id) %>% select(-date_of_tweet) %>% 
+  mutate(maxx = sum(nth_tweet_on_date))
+
+summed <- maxes %>% arrange(author.id) %>%
+  group_by(author.id) %>% select(-date_of_tweet) %>% 
+  mutate(maxx = sum(nth_tweet_on_date)) %>% select(-nth_tweet_on_date) %>% 
+  distinct()  %>% arrange(desc(maxx))
+dim(summed)
+sums <- summed$maxx 
+sum(table(sums))
+table(sums)
+#boxplot(sums)
+
+count_ids_5_to300 <- summed$author.id[summed$maxx > 4 & summed$maxx < 300]
+length(count_ids_5_to300)
+datsub <- dat[dat$author.id %in% count_ids_5_to300,]
+#take subset that excludes predictions of neutral for abortion stance
+datsub <- datsub[datsub$prolife_prochoice=="life" | datsub$prolife_prochoice=="choice",]
+```
+
+
+
+# Can individuals’ moral framing of the tweet predict whether they are pro-life or pro-choice? 
+
+## Pro-Life
+```{r}
+M2_life_binaryM_m1 <- glmer(life ~ binary_morality + dayofweek + 
+                              (1 | author.id), 
+                            data = datsub, family = binomial(link = "logit"),
+                         glmerControl(optimizer = "bobyqa"))
+summary(M2_life_binaryM_m1)
+```
+
+```{r}
+M2_life_mft5_m2_unord <- glmer(life ~ care + fairness + authority + loyalty + 
+                                 purity + 
+                              dayofweek + 
+                              (1 | author.id), 
+                            data = datsub, family = binomial(link = "logit"),
+                         glmerControl(optimizer = "bobyqa"))
+summary(M2_life_mft5_m2_unord)
+```
+
+
+```{r}
+M2_life_mft5_m3 <- glmer(life ~ care + fairness + authority + loyalty + purity + 
+                              dayofweek +
+                              positive +
+                              negative +
+                              neutral +
+                              (1 | author.id), 
+                            data = datsub, family = binomial(link = "logit"),
+                         glmerControl(optimizer = "bobyqa"))
+
+summary(M2_life_mft5_m3)
+```
+
+
+```{r}
+
+M2_life_mft5_m4 <- glmer(life ~ binary_morality * sentiment +
+                              (1 | author.id), 
+                            data = datsub, family = binomial(link = "logit"),
+                         glmerControl(optimizer = "bobyqa"))
+
+summary(M2_life_mft5_m4)
+```
+
+
+## Pro-Choice
+
+```{r}
+M2_choice_binaryM_m1 <- glmer(choice ~ binary_morality + dayofweek + 
+                              (1 | author.id),
+                            data = datsub, family = binomial(link = "logit"),
+                          glmerControl(optimizer = "bobyqa"))
+summary(M2_choice_binaryM_m1)
+```
+
+```{r}
+M2_choice_mft5_m2 <- glmer(choice ~ care + fairness + authority + loyalty + 
+                                 purity +
+                              dayofweek + 
+                              (1 | author.id), 
+                            data = dat, family = binomial(link = "logit"),
+                          glmerControl(optimizer = "bobyqa"))
+summary(M2_choice_mft5_m2)
+cbind(round(summary(M2_life_mft5_m2_unord)$coefficients,3),
+      round(summary(M2_choice_mft5_m2)$coefficients,3)) %>% kableExtra::kable()
+round(summary(M2_choice_mft5_m2)$coefficients,3) %>% kableExtra::kable()
+
+cbind(round(exp(summary(M2_life_mft5_m2_unord)$coefficients[,1:2]),3),
+      round(exp(summary(M2_choice_mft5_m2)$coefficients[,1:2]),3) %>% kableExtra::kable()
+```
+
+```{r}
+M2_choice_mft5_m3 <- glmer(choice ~ care + fairness + authority + loyalty + 
+                             purity + 
+                              dayofweek +
+                              positive +
+                              negative +
+                              neutral +
+                              (1 | author.id), 
+                            data = datsub, family = binomial(link = "logit"),
+                         glmerControl(optimizer = "bobyqa"))
+summary(M2_choice_mft5_m3)
+```
+
+```{r}
+M2_choice_mft5_m4 <- glmer(choice ~ binary_morality * sentiment + 
+                              dayofweek +
+                              (1 | author.id), 
+                            data = datsub, family = binomial(link = "logit"),
+                         glmerControl(optimizer = "bobyqa"))
+summary(M2_choice_mft5_m4)
+```
+
+
+```{r}
+M2_choice_mft5_m4 <- glmer(choice ~ binary_morality * sentiment + 
+                              dayofweek +
+                              (1 | author.id), 
+                            data = datsub, family = binomial(link = "logit"),
+                         glmerControl(optimizer = "bobyqa"))
+summary(M2_choice_mft5_m4)
+```
+
+
+
+```{r}
+M3_life_m1 <- glmer(life ~ care * positive + care * negative +
+                      fairness * positive + fairness * negative +
+                      authority * positive + authority * negative +
+                      loyalty * positive + loyalty * negative +
+                      purity * positive + purity * negative +
+                              dayofweek +
+                              (1 | author.id), 
+                            data = datsub, family = binomial(link = "logit"),
+                         glmerControl(optimizer = "bobyqa"))
+summary(M3_life_m1)
+```
+
+```{r}
+M3_choice_m1 <- glmer(choice ~ care * positive + care * negative +
+                      fairness * positive + fairness * negative +
+                      authority * positive + authority * negative +
+                      loyalty * positive + loyalty * negative +
+                      purity * positive + purity * negative +
+                              dayofweek +
+                              (1 | author.id), 
+                            data = datsub, family = binomial(link = "logit"),
+                         glmerControl(optimizer = "bobyqa"))
+summary(M3_choice_m1)
+```
+```{r}
+M4_choice_m1 <- glmer(choice ~ binary_morality * sentiment +ST_clin_total +
+                        ST_MAB_md_cost22 +  ST_clin_prov_AB22 + 
+                        ST_clin_prov_PAB22 + ST_clin_prov_MAB22 + 
+                              dayofweek +
+                              (1 | author.id), 
+                            data = datsub, family = binomial(link = "logit"),
+                         glmerControl(optimizer = "bobyqa"))
+summary(M4_choice_m1)
+```
+
+
+```{r}
+M4_life_m1 <- glmer(life ~ binary_morality * sentiment +ST_clin_total +
+                        ST_MAB_md_cost22 +  ST_clin_prov_AB22 + 
+                        ST_clin_prov_PAB22 + ST_clin_prov_MAB22 + 
+                              dayofweek +
+                              (1 | author.id), 
+                            data = datsub, family = binomial(link = "logit"),
+                         glmerControl(optimizer = "bobyqa"))
+summary(M4_life_m1)
+```
+
+
+
+
+```{r}
+M2_life_mft5_m2_unord_CIs <- round(exp(confint(M2_life_mft5_m2_unord)),3)
+
+NB_ab_neutral_M1_CIs
+```
+

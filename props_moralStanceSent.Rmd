@@ -1,0 +1,776 @@
+---
+title: "Tweet level morality, stance, sentiment"
+author: "Meltem Ozcan"
+date: "2023-12-08"
+output: pdf_document
+---
+
+```{r warning = FALSE, message=FALSE}
+library(dplyr)
+library(lubridate)
+library(ggplot2)
+library(glmmTMB)
+library(dplyr)
+library(tidyr)
+```
+
+```{r warning = FALSE, m/essage = FALSE}
+dat <- readr::read_csv("/Users/meltemozcan/Desktop/PSYC 626/TwitterAbortion/Data/final_wave2_upd.csv")
+# total tweets by each author over the full time period
+total_num_tweets_per_auth <- dat %>% 
+    group_by(author.id) %>% 
+    summarise(num_tweets_by_author = n_distinct(id)) %>% 
+    arrange(desc(num_tweets_by_author)) 
+#total_num_tweets_per_auth %>% head()
+#summary(total_num_tweets_per_auth$num_tweets_by_author)
+
+length(unique(dat$author.id)) #72305 unique authors
+length(unique(dat$id)) #245891 unique records
+```
+
+```{r}
+dat$sentiment = ordered(as.factor(dat$sentiment), 
+                        c("negative", "neutral", "positive"))
+dat$prolife_prochoice <- ordered(as.factor(dat$prolife_prochoice),
+                                 c("life", "neutral", "choice"))
+dat$binary_morality <- ordered(as.factor(dat$binary_morality),
+                               ordered(c("moral", "non-moral")))
+dat$care <- ordered(as.factor(dat$care),
+                               ordered(c("0", "1")))
+dat$fairness <- ordered(as.factor(dat$fairness),
+                               ordered(c("0", "1")))
+dat$authority <- ordered(as.factor(dat$authority),
+                               ordered(c("0", "1")))
+dat$loyalty <- ordered(as.factor(dat$loyalty),
+                               ordered(c("0", "1")))
+dat$purity <- ordered(as.factor(dat$purity),
+                               ordered(c("0", "1")))
+dat$windows <- ""
+dat[dat$pre52_Dobbs==1, "windows"] <- "pre-Dobbs"
+dat[dat$btwn52_Dobbs_Overturn==1, "windows"] <-  "post-Dobbs & pre-overturn"
+dat[dat$post52_Overturn==1, "windows"]<- "post-overturn"
+dat$windows <- ordered(as.factor(dat$windows), 
+                       c("pre-Dobbs", "post-Dobbs & pre-overturn", "post-overturn"))
+```
+ 
+
+```{r}
+dat %>% group_by(binary_morality) %>% 
+  summarise(n = n()) %>% mutate(prop = n/sum(n))
+#0.429605 moral, 0.570395 nonmoral
+```
+
+```{r}
+ dat %>% group_by(prolife_prochoice) %>% 
+  summarise(n = n()) %>% mutate(prop = n/sum(n)) 
+```
+
+
+
+```{r}
+choice <- dat[dat$prolife_prochoice == "choice",]
+choice %>% group_by(binary_morality) %>%
+  summarise(n = n()) %>% mutate(prop = n/sum(n))
+choice %>% group_by(care) %>%
+  summarise(n = n()) %>% mutate(prop = n/sum(n))
+choice %>% group_by(fairness) %>%
+  summarise(n = n()) %>% mutate(prop = n/sum(n))
+choice %>% group_by(authority) %>%
+  summarise(n = n()) %>% mutate(prop = n/sum(n))
+choice %>% group_by(loyalty) %>%
+  summarise(n = n()) %>% mutate(prop = n/sum(n))
+choice %>% group_by(purity) %>%
+  summarise(n = n()) %>% mutate(prop = n/sum(n))
+```
+```{r}
+life <- dat[dat$prolife_prochoice == "life",]
+life %>% group_by(binary_morality) %>%
+  summarise(n = n()) %>% mutate(prop = n/sum(n))
+life %>% group_by(care) %>%
+  summarise(n = n()) %>% mutate(prop = n/sum(n))
+life %>% group_by(fairness) %>%
+  summarise(n = n()) %>% mutate(prop = n/sum(n))
+life %>% group_by(authority) %>%
+  summarise(n = n()) %>% mutate(prop = n/sum(n))
+life %>% group_by(loyalty) %>%
+  summarise(n = n()) %>% mutate(prop = n/sum(n))
+life %>% group_by(purity) %>%
+  summarise(n = n()) %>% mutate(prop = n/sum(n))
+```
+
+```{r}
+neutral <- dat[dat$prolife_prochoice == "neutral",]
+neutral %>% group_by(binary_morality) %>%
+  summarise(n = n()) %>% mutate(prop = n/sum(n))
+neutral %>% group_by(care) %>%
+  summarise(n = n()) %>% mutate(prop = n/sum(n))
+neutral %>% group_by(fairness) %>%
+  summarise(n = n()) %>% mutate(prop = n/sum(n))
+neutral %>% group_by(authority) %>%
+  summarise(n = n()) %>% mutate(prop = n/sum(n))
+neutral %>% group_by(loyalty) %>%
+  summarise(n = n()) %>% mutate(prop = n/sum(n))
+neutral %>% group_by(purity) %>%
+  summarise(n = n()) %>% mutate(prop = n/sum(n))
+```
+
+```{r}
+
+```
+
+
+
+
+```{r warning=FALSE, message=FALSE}
+mft <- c( "care", "fairness", "authority", "loyalty", "purity")
+p_pro_moral <- dat %>% group_by(prolife_prochoice, binary_morality) %>% 
+  summarise(n = n()) %>% mutate(prop = n/sum(n)) %>% 
+  filter(binary_morality == "moral") %>% select(prop)
+
+abortion <- c("pro-life", "neutral", "pro-choice")
+p_pro_moral <- as.numeric(t(round(p_pro_moral[,2],3)))
+
+
+p_pro_care <- dat %>% filter(binary_morality == "moral") %>%
+  group_by(prolife_prochoice, care) %>% 
+  summarise(n = n()) %>% mutate(prop = n/sum(n))
+p_pro_care <- p_pro_care[c(2,4,6), ] %>% select(-c(n, care)) # rows where care == 1
+
+p_pro_fair <- dat %>% filter(binary_morality == "moral") %>%
+  group_by(prolife_prochoice, fairness) %>% 
+  summarise(n = n()) %>% mutate(prop = n/sum(n))
+p_pro_fair <- p_pro_fair[c(2,4,6), ] %>% select(-c(n, fairness))
+
+p_pro_aut <- dat %>% filter(binary_morality == "moral") %>%
+  group_by(prolife_prochoice, authority) %>% 
+  summarise(n = n()) %>% mutate(prop = n/sum(n))
+p_pro_aut <- p_pro_aut[c(2,4,6), ]%>% select(-c(n, authority))
+
+p_pro_loyalty <- dat %>% filter(binary_morality == "moral") %>%
+  group_by(prolife_prochoice, loyalty) %>% 
+  summarise(n = n()) %>% mutate(prop = n/sum(n)) 
+
+p_pro_loyalty <- p_pro_loyalty[c(2,4,6), ]%>% select(-c(n, loyalty))
+
+p_pro_purity <- dat %>% filter(binary_morality == "moral") %>%
+  group_by(prolife_prochoice, purity) %>% 
+  summarise(n = n()) %>% mutate(prop = n/sum(n))
+p_pro_purity <- p_pro_purity[c(2,4,6), ]%>% select(-c(n, purity))
+
+mft_abortion <- cbind(rep(mft, each = 3), 
+                      rbind(p_pro_care, 
+                            p_pro_fair, 
+                            p_pro_aut, 
+                            p_pro_loyalty, 
+                            p_pro_purity)) %>%
+                  pivot_wider(names_from = prolife_prochoice,
+                              values_from = prop)
+mft_abortion <- rbind("moral" = p_pro_moral, mft_abortion)
+mft_abortion <- as.data.frame(round(mft_abortion[,c(2:4)],3))
+rownames(mft_abortion) <- c("moral", mft)
+mft_abortion %>% kableExtra::kable()
+```
+
+
+
+
+## moral-nonmoral
+```{r warning=FALSE, message=FALSE}
+moral_p_PRE52 <- dat %>% group_by(pre52_Dobbs, binary_morality) %>%
+    summarise(n = n()) %>% mutate(prop = n/sum(n)) %>% 
+   filter(binary_morality=="moral") 
+# note can't interpret the window in between since it pools the beginning end of
+# the year; not meaningful
+moral_p_OV52 <- dat %>% group_by(post52_Overturn, binary_morality) %>%
+    summarise(n = n()) %>% mutate(prop = n/sum(n))%>% 
+   filter(binary_morality=="moral") 
+
+moral_p_Bef <- dat %>% group_by(beforeOverturn, binary_morality) %>%
+    summarise(n = n()) %>% mutate(prop = n/sum(n)) %>% 
+   filter(binary_morality=="moral") 
+```
+
+- pre52Dobbs (1 -> 0) 3% decrease in moral tweets
+
+- post52Overturn (0 -> 1) 1% decrease
+
+- beforeOverturn (1 -> 0) 5% decrease
+
+## Care 
+```{r warning=FALSE, message=FALSE}
+
+care_p_PRE52 <- dat %>% filter(binary_morality=="moral") %>%
+  group_by(pre52_Dobbs, care) %>%
+  summarise(n = n()) %>% mutate(prop = n/sum(n))%>% 
+   filter(care==1) 
+
+care_p_OV52 <- dat %>% filter(binary_morality=="moral") %>%
+  group_by(post52_Overturn, care) %>%
+  summarise(n = n()) %>% mutate(prop = n/sum(n))%>% 
+   filter(care==1) 
+
+care_p_Bef<- dat %>% filter(binary_morality=="moral") %>%
+  group_by(beforeOverturn, care) %>%
+  summarise(n = n()) %>% mutate(prop = n/sum(n)) %>% 
+   filter(care==1) 
+```
+
+
+- pre52Dobbs (1 -> 0) prop tweets endorsing care decreased by about 8%
+
+- post52Overturn (0 -> 1)  prop tweets endorsing care decreased by about 5%
+
+- beforeOverturn (1 -> 0)   prop tweets endorsing care decreased by about 3%
+
+## Authority
+
+```{r warning=FALSE, message=FALSE}
+
+aut_p_PRE52 <- dat %>% filter(binary_morality=="moral") %>%
+  group_by(pre52_Dobbs, authority) %>%
+  summarise(n = n()) %>% mutate(prop = n/sum(n))%>% 
+         filter(authority==1) 
+
+aut_p_OV52 <- dat %>% filter(binary_morality=="moral") %>%
+  group_by(post52_Overturn, authority) %>%
+  summarise(n = n()) %>% mutate(prop = n/sum(n))%>% 
+         filter(authority==1) 
+
+aut_p_Bef <- dat %>% filter(binary_morality=="moral") %>%
+  group_by(beforeOverturn, authority) %>%
+  summarise(n = n()) %>% mutate(prop = n/sum(n)) %>% 
+         filter(authority==1) 
+```
+
+- pre52Dobbs (1 -> 0) ~1% increase
+
+- post52Overturn (0 -> 1) ~2% decrease
+
+- beforeOverturn (1 -> 0) ~ 1% increase
+
+## Fairness
+
+```{r warning=FALSE, message=FALSE}
+fair_p_PRE52 <- dat %>% filter(binary_morality=="moral") %>%
+  group_by(pre52_Dobbs, fairness) %>%
+  summarise(n = n()) %>% mutate(prop = n/sum(n))%>% 
+         filter(fairness==1) 
+
+fair_p_OV52 <-dat %>% filter(binary_morality=="moral") %>%
+  group_by(post52_Overturn, fairness) %>%
+  summarise(n = n()) %>% mutate(prop = n/sum(n))%>% 
+         filter(fairness==1)  
+
+fair_p_Bef <-dat %>% filter(binary_morality=="moral") %>%
+  group_by(beforeOverturn, fairness) %>%
+  summarise(n = n()) %>% mutate(prop = n/sum(n)) %>% 
+         filter(fairness==1) 
+```
+
+
+- pre52Dobbs (1 -> 0) 7% increase
+
+- post52Overturn (0 -> 1) 1% inc
+
+- beforeOverturn (1 -> 0) 1% inc
+
+
+## Loyalty
+
+```{r warning=FALSE, message=FALSE}
+
+loyal_p_PRE52 <- dat %>% filter(binary_morality=="moral") %>%
+  group_by(pre52_Dobbs, loyalty) %>%
+  summarise(n = n()) %>% mutate(prop = n/sum(n)) %>% 
+   filter(loyalty==1) 
+
+loyal_p_OV52 <- dat %>% filter(binary_morality=="moral") %>%
+  group_by(post52_Overturn, loyalty) %>%
+  summarise(n = n()) %>% mutate(prop = n/sum(n))%>% 
+      filter(loyalty==1) 
+
+loyal_p_Bef <- dat %>% filter(binary_morality=="moral") %>%
+  group_by(beforeOverturn, loyalty) %>%
+  summarise(n = n()) %>% mutate(prop = n/sum(n)) %>% 
+    filter(loyalty==1) 
+```
+
+- pre52Dobbs (1 -> 0) **10% increase**
+
+- post52Overturn (0 -> 1) 1% inc
+
+- beforeOverturn (1 -> 0) 6% inc
+
+
+## Purity
+ 
+```{r warning=FALSE, message=FALSE}
+ pur_p_PRE52 <- dat %>% filter(binary_morality=="moral") %>%
+  group_by(pre52_Dobbs, purity) %>%
+  summarise(n = n()) %>% mutate(prop = n/sum(n))%>% 
+      filter(purity==1) 
+
+pur_p_OV52 <- dat %>% filter(binary_morality=="moral") %>%
+  group_by(post52_Overturn, purity) %>%
+  summarise(n = n()) %>% mutate(prop = n/sum(n))%>% 
+       filter(purity==1)  
+
+pur_p_Bef <- dat %>% filter(binary_morality=="moral") %>%
+  group_by(beforeOverturn, purity) %>%
+  summarise(n = n()) %>% mutate(prop = n/sum(n)) %>% 
+       filter(purity==1) 
+```
+
+- pre52Dobbs (1 -> 0) 2% drop
+
+- post52Overturn (0 -> 1) 1% drop
+
+- beforeOverturn (1 -> 0) 0.sth no change
+
+
+```{r include = FALSE}
+#labs <- c("window", "moral", "care", "fairness", "authority", "loyalty", "purity")
+labs <- c("moral", "care", "fairness", "authority", "loyalty", "purity")
+preDobbs52Props <- rbind(moral_p_PRE52[c(2,1), c(1, 4)],
+                         care_p_PRE52[c(2,1), c(1,4)], 
+                         fair_p_PRE52[c(2,1), c(1,4)], 
+                         aut_p_PRE52[c(2,1), c(1,4)], 
+                         loyal_p_PRE52[c(2,1), c(1,4)], 
+                         pur_p_PRE52[c(2,1), c(1,4)])
+preDobbs52Props_2col <- round(cbind(preDobbs52Props[preDobbs52Props$pre52_Dobbs==1, 2],
+                              preDobbs52Props[preDobbs52Props$pre52_Dobbs==0, 2]), 3)
+dates <- c("(3/12/22-5/2/22)", "(5/22/2022-6/24/22)")
+#preDobbs52Props_2col <- rbind(dates, preDobbs52Props_2col)
+colnames(preDobbs52Props_2col) <- c("Before Dobbs Leak", "After Dobbs Leak")
+rownames(preDobbs52Props_2col) <- labs
+```
+
+
+```{r include = FALSE}
+
+postOV52Props <- rbind(moral_p_OV52[, c(1, 4)],
+                         care_p_OV52[, c(1,4)], 
+                         fair_p_OV52[,c(1,4)], 
+                         aut_p_OV52[, c(1,4)], 
+                         loyal_p_OV52[, c(1,4)], 
+                         pur_p_OV52[, c(1,4)])
+postOV52Props_2col <- round(cbind(postOV52Props[postOV52Props$post52_Overturn==1, 2],
+                              postOV52Props[postOV52Props$post52_Overturn==0, 2]),3)
+dates <- c("(3/12/22-6/24/22)", "(6/24/22-8/15/22)")
+#postOV52Props_2col <- rbind(dates, (postOV52Props_2col))
+colnames(postOV52Props_2col) <- c("Before Overturn", "After Overturn")
+rownames(postOV52Props_2col) <- labs
+```
+
+```{r include = FALSE}
+dates <- c("(1/1/22-6/24/22)", "(6/24/22-1/6/22)")
+befOVProps <-rbind(moral_p_Bef[c(2,1), c(1, 4)],
+                         care_p_Bef[c(2,1), c(1,4)], 
+                         fair_p_Bef[c(2,1), c(1,4)], 
+                         aut_p_Bef[c(2,1), c(1,4)], 
+                         loyal_p_Bef[c(2,1), c(1,4)], 
+                         pur_p_Bef[c(2,1), c(1,4)])
+befOVProps_2col <- round(cbind(befOVProps[befOVProps$beforeOverturn==1, 2],
+                              befOVProps[befOVProps$beforeOverturn==0, 2]),3)
+colnames(postOV52Props_2col) <- c("Before Overturn*", "After Overturn*")
+rownames(befOVProps_2col) <- labs
+```
+
+```{r echo=FALSE}
+as.data.frame(cbind(preDobbs52Props_2col, 
+                    postOV52Props_2col,
+                    befOVProps_2col)) %>% kableExtra::kable()
+```
+
+
+## What is the moral makeup of abortion-related tweets published in 2022?
+
+Within pro-life tweets, pro-choice tweets. neutral tweets, compute proportions
+
+
+```{r warning=FALSE, message=FALSE}
+dat$prolife_prochoice <- ordered(as.factor(dat$prolife_prochoice),
+                                 c("life", "neutral", "choice"))
+```
+
+```{r warning=FALSE, message = FALSE}
+# FAIRNESS 
+
+# for pro-life tweets, look at the proportions across time points
+ fair_p_life_pre52 <- dat %>% filter(prolife_prochoice=="life" & !is.na(fairness)) %>%
+  group_by(pre52_Dobbs, fairness) %>%
+  summarise(n = n()) %>% mutate(prop = n/sum(n))%>% filter(fairness==1)
+
+fair_p_life_post52 <- dat %>% filter(prolife_prochoice=="life" & !is.na(fairness)) %>%
+  group_by(post52_Overturn, fairness) %>%
+  summarise(n = n()) %>% mutate(prop = n/sum(n))%>% filter(fairness==1)
+
+ fair_p_life_bef<- dat %>% filter(prolife_prochoice=="life" & !is.na(fairness)) %>%
+  group_by(beforeOverturn, fairness) %>%
+  summarise(n = n()) %>% mutate(prop = n/sum(n)) %>% filter(fairness==1)
+ 
+ fair_life_df <- round(rbind(t(fair_p_life_pre52[c(2,1),"prop"]),
+                          t(fair_p_life_post52[,"prop"]),
+                          t(fair_p_life_bef[c(2,1),"prop"])),3)
+ labs2 <- c( "preDobbs52", "post overturn", "beforeOverturn") 
+ labs <- c("pre", "post")
+ rownames(fair_life_df) <- labs2
+ colnames(fair_life_df) <- labs
+ 
+ 
+ 
+ # for pro-choice tweets, look at the proportions across time points
+ fair_p_choice_pre52 <- dat %>% filter(prolife_prochoice=="choice" & !is.na(fairness)) %>%
+  group_by(pre52_Dobbs, fairness) %>%
+  summarise(n = n()) %>% mutate(prop = n/sum(n))%>% filter(fairness==1)
+
+fair_p_choice_post52 <- dat %>% filter(prolife_prochoice=="choice" & !is.na(fairness)) %>%
+  group_by(post52_Overturn, fairness) %>%
+  summarise(n = n()) %>% mutate(prop = n/sum(n))%>% filter(fairness==1)
+
+ fair_p_choice_bef<- dat %>% filter(prolife_prochoice=="choice" & !is.na(fairness)) %>%
+  group_by(beforeOverturn, fairness) %>%
+  summarise(n = n()) %>% mutate(prop = n/sum(n)) %>% filter(fairness==1)
+ 
+ fair_choice_df <- round(rbind(t(fair_p_choice_pre52[c(2,1),"prop"]),
+                          t(fair_p_choice_post52[,"prop"]),
+                          t(fair_p_choice_bef[c(2,1),"prop"])),3)
+
+  # for ab neutral tweets, look at the proportions across time points
+ fair_p_ab_neut_pre52 <- dat %>% filter(prolife_prochoice=="neutral" & !is.na(fairness)) %>%
+  group_by(pre52_Dobbs, fairness) %>%
+  summarise(n = n()) %>% mutate(prop = n/sum(n))%>% filter(fairness==1)
+
+fair_p_ab_neut_post52 <- dat %>% filter(prolife_prochoice=="neutral" & !is.na(fairness)) %>%
+  group_by(post52_Overturn, fairness) %>%
+  summarise(n = n()) %>% mutate(prop = n/sum(n))%>% filter(fairness==1)
+
+ fair_p_ab_neut_bef<- dat %>% filter(prolife_prochoice=="neutral" & !is.na(fairness)) %>%
+  group_by(beforeOverturn, fairness) %>%
+  summarise(n = n()) %>% mutate(prop = n/sum(n)) %>% filter(fairness==1)
+ 
+ fair_ab_neut_df <- round(rbind(t(fair_p_ab_neut_pre52[c(2,1),"prop"]),
+                          t(fair_p_ab_neut_post52[,"prop"]),
+                          t(fair_p_ab_neut_bef[c(2,1),"prop"])),3)
+ 
+ 
+ 
+ labs3 <- c("life","", "abortion neutral", "", "choice", "")
+stance_fairness <- rbind(rep(labs,3), cbind(fair_life_df,fair_ab_neut_df,fair_choice_df))
+  rownames(stance_fairness) <- c( "", "preDobbs52", "post overturn", "beforeOverturn") 
+ colnames(stance_fairness) <- labs3
+ 
+ stance_fairness %>% kableExtra::kable()
+```
+
+```{r}
+# PURITY 
+
+# for pro-life tweets, look at the proportions across time points
+ purity_p_life_pre52 <- dat %>% filter(prolife_prochoice=="life" & !is.na(purity)) %>%
+  group_by(pre52_Dobbs, purity) %>%
+  summarise(n = n()) %>% mutate(prop = n/sum(n))%>% filter(purity==1)
+
+purity_p_life_post52 <- dat %>% filter(prolife_prochoice=="life" & !is.na(purity)) %>%
+  group_by(post52_Overturn, purity) %>%
+  summarise(n = n()) %>% mutate(prop = n/sum(n))%>% filter(purity==1)
+
+ purity_p_life_bef<- dat %>% filter(prolife_prochoice=="life" & !is.na(purity)) %>%
+  group_by(beforeOverturn, purity) %>%
+  summarise(n = n()) %>% mutate(prop = n/sum(n)) %>% filter(purity==1)
+ 
+ purity_life_df <- round(rbind(t(purity_p_life_pre52[c(2,1),"prop"]),
+                          t(purity_p_life_post52[,"prop"]),
+                          t(purity_p_life_bef[c(2,1),"prop"])),3)
+ labs2 <- c( "preDobbs52", "post overturn", "beforeOverturn") 
+ labs <- c("pre", "post")
+ rownames(purity_life_df) <- labs2
+ colnames(purity_life_df) <- labs
+ 
+ 
+ 
+ # for pro-choice tweets, look at the proportions across time points
+ purity_p_choice_pre52 <- dat %>% filter(prolife_prochoice=="choice" & !is.na(purity)) %>%
+  group_by(pre52_Dobbs, purity) %>%
+  summarise(n = n()) %>% mutate(prop = n/sum(n))%>% filter(purity==1)
+
+purity_p_choice_post52 <- dat %>% filter(prolife_prochoice=="choice" & !is.na(purity)) %>%
+  group_by(post52_Overturn, purity) %>%
+  summarise(n = n()) %>% mutate(prop = n/sum(n))%>% filter(purity==1)
+
+ purity_p_choice_bef<- dat %>% filter(prolife_prochoice=="choice" & !is.na(purity)) %>%
+  group_by(beforeOverturn, purity) %>%
+  summarise(n = n()) %>% mutate(prop = n/sum(n)) %>% filter(purity==1)
+ 
+ purity_choice_df <- round(rbind(t(purity_p_choice_pre52[c(2,1),"prop"]),
+                          t(purity_p_choice_post52[,"prop"]),
+                          t(purity_p_choice_bef[c(2,1),"prop"])),3)
+
+  # for ab neutral tweets, look at the proportions across time points
+ purity_p_ab_neut_pre52 <- dat %>% filter(prolife_prochoice=="neutral" & !is.na(purity)) %>%
+  group_by(pre52_Dobbs, purity) %>%
+  summarise(n = n()) %>% mutate(prop = n/sum(n))%>% filter(purity==1)
+
+purity_p_ab_neut_post52 <- dat %>% filter(prolife_prochoice=="neutral" & !is.na(purity)) %>%
+  group_by(post52_Overturn, purity) %>%
+  summarise(n = n()) %>% mutate(prop = n/sum(n))%>% filter(purity==1)
+
+ purity_p_ab_neut_bef<- dat %>% filter(prolife_prochoice=="neutral" & !is.na(purity)) %>%
+  group_by(beforeOverturn, purity) %>%
+  summarise(n = n()) %>% mutate(prop = n/sum(n)) %>% filter(purity==1)
+ 
+ purity_ab_neut_df <- round(rbind(t(purity_p_ab_neut_pre52[c(2,1),"prop"]),
+                          t(purity_p_ab_neut_post52[,"prop"]),
+                          t(purity_p_ab_neut_bef[c(2,1),"prop"])),3)
+ 
+ 
+ 
+ labs3 <- c("life","", "abortion neutral", "", "choice", "")
+stance_purity <- rbind(rep(labs,3), cbind(purity_life_df,purity_ab_neut_df,purity_choice_df))
+  rownames(stance_purity) <- c( "", "preDobbs52", "post overturn", "beforeOverturn") 
+ colnames(stance_purity) <- labs3
+ 
+ stance_purity %>% kableExtra::kable()
+```
+
+
+
+```{r warning=FALSE, message = FALSE}
+# AUTHORITY
+
+# for pro-life tweets, look at the proportions across time points
+ fair_p_life_pre52 <- dat %>% filter(prolife_prochoice=="life" & !is.na(authority)) %>%
+  group_by(pre52_Dobbs, authority) %>%
+  summarise(n = n()) %>% mutate(prop = n/sum(n))%>% filter(authority==1)
+
+fair_p_life_post52 <- dat %>% filter(prolife_prochoice=="life" & !is.na(authority)) %>%
+  group_by(post52_Overturn, authority) %>%
+  summarise(n = n()) %>% mutate(prop = n/sum(n))%>% filter(authority==1)
+
+ fair_p_life_bef<- dat %>% filter(prolife_prochoice=="life" & !is.na(authority)) %>%
+  group_by(beforeOverturn, authority) %>%
+  summarise(n = n()) %>% mutate(prop = n/sum(n)) %>% filter(authority==1)
+ 
+ fair_life_df <- round(rbind(t(fair_p_life_pre52[c(2,1),"prop"]),
+                          t(fair_p_life_post52[,"prop"]),
+                          t(fair_p_life_bef[c(2,1),"prop"])),3)
+ labs2 <- c( "preDobbs52", "post overturn", "beforeOverturn") 
+ labs <- c("pre", "post")
+ rownames(fair_life_df) <- labs2
+ colnames(fair_life_df) <- labs
+ 
+ 
+ 
+ # for pro-choice tweets, look at the proportions across time points
+ fair_p_choice_pre52 <- dat %>% filter(prolife_prochoice=="choice" & !is.na(authority)) %>%
+  group_by(pre52_Dobbs, authority) %>%
+  summarise(n = n()) %>% mutate(prop = n/sum(n))%>% filter(authority==1)
+
+fair_p_choice_post52 <- dat %>% filter(prolife_prochoice=="choice" & !is.na(authority)) %>%
+  group_by(post52_Overturn, authority) %>%
+  summarise(n = n()) %>% mutate(prop = n/sum(n))%>% filter(authority==1)
+
+ fair_p_choice_bef<- dat %>% filter(prolife_prochoice=="choice" & !is.na(authority)) %>%
+  group_by(beforeOverturn, authority) %>%
+  summarise(n = n()) %>% mutate(prop = n/sum(n)) %>% filter(authority==1)
+ 
+ fair_choice_df <- round(rbind(t(fair_p_choice_pre52[c(2,1),"prop"]),
+                          t(fair_p_choice_post52[,"prop"]),
+                          t(fair_p_choice_bef[c(2,1),"prop"])),3)
+
+  # for ab neutral tweets, look at the proportions across time points
+ fair_p_ab_neut_pre52 <- dat %>% filter(prolife_prochoice=="neutral" & !is.na(authority)) %>%
+  group_by(pre52_Dobbs, authority) %>%
+  summarise(n = n()) %>% mutate(prop = n/sum(n))%>% filter(authority==1)
+
+fair_p_ab_neut_post52 <- dat %>% filter(prolife_prochoice=="neutral" & !is.na(authority)) %>%
+  group_by(post52_Overturn, authority) %>%
+  summarise(n = n()) %>% mutate(prop = n/sum(n))%>% filter(authority==1)
+
+ fair_p_ab_neut_bef<- dat %>% filter(prolife_prochoice=="neutral" & !is.na(authority)) %>%
+  group_by(beforeOverturn, authority) %>%
+  summarise(n = n()) %>% mutate(prop = n/sum(n)) %>% filter(authority==1)
+ 
+ fair_ab_neut_df <- round(rbind(t(fair_p_ab_neut_pre52[c(2,1),"prop"]),
+                          t(fair_p_ab_neut_post52[,"prop"]),
+                          t(fair_p_ab_neut_bef[c(2,1),"prop"])),3)
+ 
+ 
+ 
+ labs3 <- c("life","", "abortion neutral", "", "choice", "")
+stance_authority <- rbind(rep(labs,3), cbind(fair_life_df,fair_ab_neut_df,fair_choice_df))
+  rownames(stance_authority) <- c( "", "preDobbs52", "post overturn", "beforeOverturn") 
+ colnames(stance_authority) <- labs3
+ 
+ stance_authority %>% kableExtra::kable()
+```
+
+
+
+
+```{r warning=FALSE, message = FALSE}
+# LOYALTY
+
+# for pro-life tweets, look at the proportions across time points
+ loyalty_p_life_pre52 <- dat %>% filter(prolife_prochoice=="life" & !is.na(loyalty)) %>%
+  group_by(pre52_Dobbs, loyalty) %>%
+  summarise(n = n()) %>% mutate(prop = n/sum(n))%>% filter(loyalty==1)
+
+loyalty_p_life_post52 <- dat %>% filter(prolife_prochoice=="life" & !is.na(loyalty)) %>%
+  group_by(post52_Overturn, loyalty) %>%
+  summarise(n = n()) %>% mutate(prop = n/sum(n))%>% filter(loyalty==1)
+
+ loyalty_p_life_bef<- dat %>% filter(prolife_prochoice=="life" & !is.na(loyalty)) %>%
+  group_by(beforeOverturn, loyalty) %>%
+  summarise(n = n()) %>% mutate(prop = n/sum(n)) %>% filter(loyalty==1)
+ 
+ loyalty_life_df <- round(rbind(t(loyalty_p_life_pre52[c(2,1),"prop"]),
+                          t(loyalty_p_life_post52[,"prop"]),
+                          t(loyalty_p_life_bef[c(2,1),"prop"])),3)
+ labs2 <- c( "preDobbs52", "post overturn", "beforeOverturn") 
+ labs <- c("pre", "post")
+ rownames(loyalty_life_df) <- labs2
+ colnames(loyalty_life_df) <- labs
+ 
+ 
+ 
+ # for pro-choice tweets, look at the proportions across time points
+ loyalty_p_choice_pre52 <- dat %>% filter(prolife_prochoice=="choice" & !is.na(loyalty)) %>%
+  group_by(pre52_Dobbs, loyalty) %>%
+  summarise(n = n()) %>% mutate(prop = n/sum(n))%>% filter(loyalty==1)
+
+loyalty_p_choice_post52 <- dat %>% filter(prolife_prochoice=="choice" & !is.na(loyalty)) %>%
+  group_by(post52_Overturn, loyalty) %>%
+  summarise(n = n()) %>% mutate(prop = n/sum(n))%>% filter(loyalty==1)
+
+ loyalty_p_choice_bef<- dat %>% filter(prolife_prochoice=="choice" & !is.na(loyalty)) %>%
+  group_by(beforeOverturn, loyalty) %>%
+  summarise(n = n()) %>% mutate(prop = n/sum(n)) %>% filter(loyalty==1)
+ 
+ loyalty_choice_df <- round(rbind(t(loyalty_p_choice_pre52[c(2,1),"prop"]),
+                          t(loyalty_p_choice_post52[,"prop"]),
+                          t(loyalty_p_choice_bef[c(2,1),"prop"])),3)
+
+  # for ab neutral tweets, look at the proportions across time points
+ loyalty_p_ab_neut_pre52 <- dat %>% filter(prolife_prochoice=="neutral" & !is.na(loyalty)) %>%
+  group_by(pre52_Dobbs, loyalty) %>%
+  summarise(n = n()) %>% mutate(prop = n/sum(n))%>% filter(loyalty==1)
+
+loyalty_p_ab_neut_post52 <- dat %>% filter(prolife_prochoice=="neutral" & !is.na(loyalty)) %>%
+  group_by(post52_Overturn, loyalty) %>%
+  summarise(n = n()) %>% mutate(prop = n/sum(n))%>% filter(loyalty==1)
+
+ loyalty_p_ab_neut_bef<- dat %>% filter(prolife_prochoice=="neutral" & !is.na(loyalty)) %>%
+  group_by(beforeOverturn, loyalty) %>%
+  summarise(n = n()) %>% mutate(prop = n/sum(n)) %>% filter(loyalty==1)
+ 
+ loyalty_ab_neut_df <- round(rbind(t(loyalty_p_ab_neut_pre52[c(2,1),"prop"]),
+                          t(loyalty_p_ab_neut_post52[,"prop"]),
+                          t(loyalty_p_ab_neut_bef[c(2,1),"prop"])),3)
+ 
+ 
+ 
+ labs3 <- c("life","", "abortion neutral", "", "choice", "")
+stance_loyalty <- rbind(rep(labs,3), cbind(loyalty_life_df,loyalty_ab_neut_df,loyalty_choice_df))
+  rownames(stance_loyalty) <- c( "", "preDobbs52", "post overturn", "beforeOverturn") 
+ colnames(stance_loyalty) <- labs3
+ 
+ stance_loyalty %>% kableExtra::kable()
+```
+
+
+
+```{r warning=FALSE, message = FALSE}
+# CARE
+
+# for pro-life tweets, look at the proportions across time points
+ care_p_life_pre52 <- dat %>% filter(prolife_prochoice=="life" & !is.na(care)) %>%
+  group_by(pre52_Dobbs, care) %>%
+  summarise(n = n()) %>% mutate(prop = n/sum(n))%>% filter(care==1)
+
+care_p_life_post52 <- dat %>% filter(prolife_prochoice=="life" & !is.na(care)) %>%
+  group_by(post52_Overturn, care) %>%
+  summarise(n = n()) %>% mutate(prop = n/sum(n))%>% filter(care==1)
+
+ care_p_life_bef<- dat %>% filter(prolife_prochoice=="life" & !is.na(care)) %>%
+  group_by(beforeOverturn, care) %>%
+  summarise(n = n()) %>% mutate(prop = n/sum(n)) %>% filter(care==1)
+ 
+ care_life_df <- round(rbind(t(care_p_life_pre52[c(2,1),"prop"]),
+                          t(care_p_life_post52[,"prop"]),
+                          t(care_p_life_bef[c(2,1),"prop"])),3)
+ labs2 <- c( "preDobbs52", "post overturn", "beforeOverturn") 
+ labs <- c("pre", "post")
+ rownames(care_life_df) <- labs2
+ colnames(care_life_df) <- labs
+ 
+ 
+ 
+ # for pro-choice tweets, look at the proportions across time points
+ care_p_choice_pre52 <- dat %>% filter(prolife_prochoice=="choice" & !is.na(care)) %>%
+  group_by(pre52_Dobbs, care) %>%
+  summarise(n = n()) %>% mutate(prop = n/sum(n))%>% filter(care==1)
+
+care_p_choice_post52 <- dat %>% filter(prolife_prochoice=="choice" & !is.na(care)) %>%
+  group_by(post52_Overturn, care) %>%
+  summarise(n = n()) %>% mutate(prop = n/sum(n))%>% filter(care==1)
+
+ care_p_choice_bef<- dat %>% filter(prolife_prochoice=="choice" & !is.na(care)) %>%
+  group_by(beforeOverturn, care) %>%
+  summarise(n = n()) %>% mutate(prop = n/sum(n)) %>% filter(care==1)
+ 
+ care_choice_df <- round(rbind(t(care_p_choice_pre52[c(2,1),"prop"]),
+                          t(care_p_choice_post52[,"prop"]),
+                          t(care_p_choice_bef[c(2,1),"prop"])),3)
+
+  # for ab neutral tweets, look at the proportions across time points
+ care_p_ab_neut_pre52 <- dat %>% filter(prolife_prochoice=="neutral" & !is.na(care)) %>%
+  group_by(pre52_Dobbs, care) %>%
+  summarise(n = n()) %>% mutate(prop = n/sum(n))%>% filter(care==1)
+
+care_p_ab_neut_post52 <- dat %>% filter(prolife_prochoice=="neutral" & !is.na(care)) %>%
+  group_by(post52_Overturn, care) %>%
+  summarise(n = n()) %>% mutate(prop = n/sum(n))%>% filter(care==1)
+
+ care_p_ab_neut_bef<- dat %>% filter(prolife_prochoice=="neutral" & !is.na(care)) %>%
+  group_by(beforeOverturn, care) %>%
+  summarise(n = n()) %>% mutate(prop = n/sum(n)) %>% filter(care==1)
+ 
+ care_ab_neut_df <- round(rbind(t(care_p_ab_neut_pre52[c(2,1),"prop"]),
+                          t(care_p_ab_neut_post52[,"prop"]),
+                          t(care_p_ab_neut_bef[c(2,1),"prop"])),3)
+ 
+ 
+ 
+ labs3 <- c("life","", "abortion neutral", "", "choice", "")
+stance_care <- rbind(rep(labs,3), cbind(care_life_df,care_ab_neut_df,care_choice_df))
+  rownames(stance_care) <- c( "", "preDobbs52", "post overturn", "beforeOverturn") 
+ colnames(stance_care) <- labs3
+ 
+ stance_care %>% kableExtra::kable()
+```
+
+
+```{r}
+df <- as.data.frame(rbind(stance_care, stance_fairness, 
+                          stance_authority, stance_loyalty, stance_purity))
+df %>% kableExtra::kable()
+
+```
+
+
+
+```{r}
+
+```
+
+
+
+
+
+
+- pre52Dobbs (1 -> 0)
+- post52Overturn (0 -> 1)
+- beforeOverturn (1 -> 0)
+
+note - pre52Dobbs,post52Overturn 52 days compared to 104
