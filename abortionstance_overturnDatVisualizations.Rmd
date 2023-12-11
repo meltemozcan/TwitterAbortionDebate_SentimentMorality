@@ -21,14 +21,28 @@ library(tidyr)
 ```
 
 ```{r warning = FALSE, message = FALSE, include = FALSE}
-dats <- readr::read_csv("Data/final_wave2.csv")
-dat <- dats %>% select(-c(geo.geo.bbo, geo.geo.bbox, text, cleantext, 
-                          vader_preprocessed_text, lang, author.verified, X, 
-                          ...1,author.username, division, two_or_more_races_inc, 
-                          two_or_more_races_ex, White, Black, Native, Asian, HIPI,
-                          other_race, edu_ov25_somecol_less1, edu_ov25_GED,
-                          edu_ov25_HSdiploma, edu_ov25_assoc, edu_ov25_somecol_nodegree))
+dats <- readr::read_csv("Data/final_wave2_upd.csv")
+# dat <- dats %>% select(-c(geo.geo.bbo, geo.geo.bbox, text, cleantext, 
+#                           vader_preprocessed_text, lang, author.verified, X, 
+#                           ...1,author.username, division, two_or_more_races_inc, 
+#                           two_or_more_races_ex, White, Black, Native, Asian, HIPI,
+#                           other_race, edu_ov25_somecol_less1, edu_ov25_GED,
+#                           edu_ov25_HSdiploma, edu_ov25_assoc, edu_ov25_somecol_nodegree))
 #head(dat)
+dat <- dats
+dat$sentiment = ordered(as.factor(dat$sentiment), 
+                        c("negative", "neutral", "positive"))
+dat$prolife_prochoice <- ordered(as.factor(dat$prolife_prochoice),
+                                 c("life", "neutral", "choice"))
+dat$binary_morality <- ordered(as.factor(dat$binary_morality),
+                               ordered(c("moral", "non-moral")))
+
+dat$windows <- ""
+dat[dat$pre52_Dobbs==1, "windows"] <- "pre-Dobbs"
+dat[dat$btwn52_Dobbs_Overturn==1, "windows"] <-  "post-Dobbs & pre-overturn"
+dat[dat$post52_Overturn==1, "windows"]<- "post-overturn"
+dat$windows <- ordered(as.factor(dat$windows), 
+                       c("pre-Dobbs", "post-Dobbs & pre-overturn", "post-overturn"))
 ```
 
 ```{r include = FALSE}
@@ -48,9 +62,6 @@ summary(dat$total_tweets_on_date)
 #highly left skewed
 ```
 
-```{r}
-summary(dat$total_tweets_on_date)
-```
 
 the following plots illustrate that there is great variation among users in
  the number of tweets posted as well as the make up of these tweets in terms
@@ -59,18 +70,14 @@ the following plots illustrate that there is great variation among users in
 ```{r echo = FALSE}
 set.seed(77)
 random_ids <- sample(dat$author.id, size = 9)
-dat$sentiment = as.factor(dat$sentiment)
-levels(dat$sentiment) = c("negative", "neutral", "positive")
+
 dat %>% 
   filter(author.id %in% random_ids)  %>%
   ggplot(aes(x = sentiment, fill = sentiment)) +
   geom_bar() +
   scale_fill_manual(values=c("#91bfdb", "#DEDEDE",  "#ef8a62")) +
   facet_wrap( ~ author.id, ncol = 3) +
-  coord_flip() +theme_bw()
-
-dat$prolife_prochoice <- as.factor(dat$prolife_prochoice)
-levels(dat$prolife_prochoice) <- c("life", "neutral", "choice")
+  coord_flip() + theme_bw()
 
 dat %>% 
   filter(author.id %in% random_ids)  %>%
@@ -79,11 +86,6 @@ dat %>%
   scale_fill_manual(values=c("maroon", "lightgray",  "steelblue")) +
   facet_wrap( ~ author.id, ncol = 3) +
   coord_flip() +theme_bw()
-
-dat$binary_morality <- as.factor(dat$binary_morality)
-
-levels(dat$binary_morality) <- c("moral", "non-moral")
-
 
 dat %>% 
   filter(author.id %in% random_ids)  %>%
@@ -94,20 +96,64 @@ dat %>%
   coord_flip() +theme_bw()
 ```
 
+```{r}
+source('helperFunc/create_window_counts.R')
+wind <- create_window_counts(dat)
+dim(wind) # 146901    174
+class(wind$sentiment)
+#sum(table(wind$windows))
+```
+
+```{r}
+dat %>% group_by(windows, sentiment) %>% 
+  summarise(n = n()) %>% mutate(prop = n/sum(n)) %>%
+  ggplot(aes( = prop, fill = sentiment)) +
+  geom_bar() +
+  scale_fill_manual(values=c("#91bfdb", "#DEDEDE",  "#ef8a62")) +
+  facet_wrap( ~ windows, ncol = 3) +
+  coord_flip() + theme_bw()
+```
+
+
+
+```{r}
+class(wind$prolife_prochoice)
+levels(wind$prolife_prochoice)
+table(dat$prolife_prochoice)
+table(wind$prolife_prochoice)
+
+
+wind %>% 
+  ggplot(aes(x = prolife_prochoice, fill = prolife_prochoice)) +
+  geom_bar() +
+  scale_fill_manual(values=c("maroon", "lightgray",  "steelblue")) +
+  facet_wrap( ~ windows, ncol = 3) +
+  coord_flip() +theme_bw()
+```
+
+
+
+
+
+
+
+
+
+
 
 
 
 ```{r include = FALSE}
 # 174 days Jan 1-Jun 24 2022, n = 27011
-beforeTweetsPerDay <- dat[dat$beforeOverturn==1,] %>%
-  dplyr::count(date_tw = date_of_tweet) 
-sum(beforeTweetsPerDay$n)
-# 196 days Jun 24 2022 - Dec 31 2022;  201032 tweets
-afterTweetsPerDay <- dat[dat$afterOverturn==1,]  %>%
-  dplyr::count(date_tw = date_of_tweet) 
-#length(unique(dat$date_of_tweet))
-afterTweetsPerDay$date_tw <- as.Date(afterTweetsPerDay$date_tw)
-beforeTweetsPerDay$date_tw <- as.Date(beforeTweetsPerDay$date_tw)
+# beforeTweetsPerDay <- dat[dat$beforeOverturn==1,] %>%
+#   dplyr::count(date_tw = date_of_tweet) 
+# sum(beforeTweetsPerDay$n)
+# # 196 days Jun 24 2022 - Dec 31 2022;  201032 tweets
+# afterTweetsPerDay <- dat[dat$afterOverturn==1,]  %>%
+#   dplyr::count(date_tw = date_of_tweet) 
+# #length(unique(dat$date_of_tweet))
+# afterTweetsPerDay$date_tw <- as.Date(afterTweetsPerDay$date_tw)
+# beforeTweetsPerDay$date_tw <- as.Date(beforeTweetsPerDay$date_tw)
 
 # 370 days
 TweetsPerDay <- dat %>% dplyr::count(date_tw = date_of_tweet) 
@@ -118,7 +164,7 @@ proLifeTweetsPerDay <- dat[dat$life==1,] %>%
   dplyr::count(date_tw = date_of_tweet) 
 proChoiceTweetsPerDay <- dat[dat$choice==1,] %>% 
   dplyr::count(date_tw = date_of_tweet) 
-proNeutralTweetsPerDay <- dat[dat$neutral==1,] %>% 
+proNeutralTweetsPerDay <- dat[dat$ab_neutral==1,] %>% 
   dplyr::count(date_tw = date_of_tweet) 
 
 # NAs present for neutral counts, add rows w 0 for appr date
@@ -208,13 +254,14 @@ round(prop.table(table(dat$sentiment, dat$binary_morality)),3)
 
 
 ```{r message = FALSE, include = FALSE}
-bef_af_rvw_s <- dat %>% 
-  group_by(beforeOverturn, sentiment) %>%
-  summarise(n=n()) %>% mutate(prop=n/sum(n))
-
-bef_af_rvw_s <- as.data.frame(bef_af_rvw_s)
-bef_af_rvw_s$beforeOverturn <- as.factor(bef_af_rvw_s$beforeOverturn)
-levels(bef_af_rvw_s$beforeOverturn) <- c('Before Overturn','After Overturn')
+# bef_af_rvw_s <- dat %>% 
+#   group_by(beforeOverturn, sentiment) %>%
+#   summarise(n=n()) %>% mutate(prop=n/sum(n))
+# 
+# bef_af_rvw_s$beforeOverturn <- recode(factor(bef_af_rvw_s$beforeOverturn),
+#                        `0` = "post-overturn",
+#                        `1` = "pre-overturn")
+# bef_af_rvw_s$beforeOverturn <- relevel(bef_af_rvw_s$beforeOverturn, "pre-overturn")
 
 
 rvw_s_be <- dat %>% filter(beforeOverturn==1) %>%
@@ -225,12 +272,20 @@ rvw_s_af <- dat %>% filter(beforeOverturn==0) %>%
   summarise(n=n()) %>% mutate(prop=n/sum(n))
 
 rvw_s_be <- as.data.frame(rvw_s_be)
-rvw_s_be$prolife_prochoice <- as.factor(rvw_s_be$prolife_prochoice)
-levels(rvw_s_be$prolife_prochoice) <- c('life', 'neutral', 'choice')
+#rvw_s_be$prolife_prochoice <- as.factor(rvw_s_be$prolife_prochoice)
+rvw_s_be$prolife_prochoice <- ordered(rvw_s_be$prolife_prochoice, 
+                                     c('life', 'neutral', 'choice'))
 rvw_s_af <- as.data.frame(rvw_s_af)
-rvw_s_af$prolife_prochoice <- as.factor(rvw_s_af$prolife_prochoice)
-levels(rvw_s_af$prolife_prochoice) <- c('life', 'neutral', 'choice')
+#rvw_s_af$prolife_prochoice <- as.factor(rvw_s_af$prolife_prochoice)
+rvw_s_af$prolife_prochoice  <- ordered(rvw_s_af$prolife_prochoice,
+                                       c('life', 'neutral', 'choice'))
+
+rvw_s_af$sentiment  <- ordered(rvw_s_af$sentiment,
+                                       c('negative', 'neutral', 'positive'))
+rvw_s_be$sentiment  <- ordered(rvw_s_be$sentiment,
+                                       c('negative', 'neutral', 'positive'))
 ```
+
 ```{r}
 par(mfrow = c(2,1))
 ggplot(rvw_s_be, aes(sentiment, prop, fill = sentiment)) + 
@@ -282,15 +337,134 @@ prop_windows_s <- as.data.frame(prop_windows_s)
 prop_windows_s$windows_52days <- as.factor(prop_windows_s$windows_52days)
 levels(prop_windows_s$windows_52days) <- c('pre-Dobbs leak','between leak and overturn', 'post-overturn')
 
-ggplot(prop_windows_s, aes(sentiment, prop, fill = sentiment)) + 
+dat %>% group_by(windows, sentiment) %>% 
+  summarise(n = n()) %>% mutate(prop = n/sum(n)) %>% 
+  filter(!is.na(windows)) %>%
+ggplot(aes(sentiment, prop, fill = sentiment)) + 
   geom_bar(stat = "identity") +
   scale_fill_manual(values=c("#91bfdb", "#DEDEDE",  "#ef8a62")) +
   labs(fill = "sentiment")+
   ylab("Proportion of tweets")+
-facet_wrap(~windows_52days) + theme_bw() + 
+facet_wrap(~windows) + theme_bw() + 
   geom_text(aes(label = round(prop, 3)),
             position = position_dodge(width=0.9), vjust = -0.25)
 ```
+
+```{r}
+#BEFORE THE DOBBS
+pre52_Dobbs_data <- dat[dat$pre52_Dobbs == 1, ]
+#print(pre52_Dobbs_data)
+
+# Calculate the count for each stance
+stance_counts <- table(pre52_Dobbs_data$prolife_prochoice)
+stance_counts_df <- as.data.frame(stance_counts)
+names(stance_counts_df) <- c("prolife_prochoice", "Count")
+
+# Calculate the total number of observations
+total_count <- sum(stance_counts_df$Count)
+stance_counts_df$Proportion <- stance_counts_df$Count / total_count
+print(stance_counts_df)
+
+sentiment_counts_within_stance <- pre52_Dobbs_data %>%
+  group_by(prolife_prochoice, sentiment) %>%
+  summarise(Count = n(), .groups = 'drop') %>%
+  mutate(Proportion = Count / stance_counts_df$Count[match(prolife_prochoice, stance_counts_df$prolife_prochoice)])
+
+sentiment_counts_within_stance <- sentiment_counts_within_stance %>%
+  mutate(AdjustedProportion = Proportion * 
+           stance_counts_df$Proportion[match(prolife_prochoice, stance_counts_df$prolife_prochoice)])
+
+
+ggplot(sentiment_counts_within_stance, 
+       aes(x = prolife_prochoice, y = AdjustedProportion, fill = sentiment)) +
+  geom_bar(stat = "identity", position = "stack") +
+  labs(title = "Sentiment Distribution within Each Stance as Proportion of Total Data",subtitle=" Before the Dobbs Leak", y = "Proportion within Stance", x = "Stance") +
+    scale_fill_manual(values = c("#91bfdb", "#DEDEDE", "#ef8a62")) +
+  theme_minimal()
+```
+
+
+```{r}
+#BETWEEN INTERVAL
+#post52_Overturn and btwn52_Dobbs_Overturn
+
+btwn52_Dobbs_Overturns_data <- dat[dat$btwn52_Dobbs_Overturn == 1, ]
+print(btwn52_Dobbs_Overturns_data)
+
+# Calculate the count for each stance
+stance_counts <- table(btwn52_Dobbs_Overturns_data$prolife_prochoice)
+stance_counts_df <- as.data.frame(stance_counts)
+names(stance_counts_df) <- c("prolife_prochoice", "Count")
+
+# Calculate the total number of observations
+total_count <- sum(stance_counts_df$Count)
+stance_counts_df$Proportion <- stance_counts_df$Count / total_count
+print(stance_counts_df)
+print(stance_counts_df$Proportion)
+
+sentiment_counts_within_stance <- btwn52_Dobbs_Overturns_data %>%
+  group_by(prolife_prochoice, sentiment) %>%
+  summarise(Count = n(), .groups = 'drop') %>%
+  mutate(Proportion = Count / stance_counts_df$Count[match(prolife_prochoice, stance_counts_df$prolife_prochoice)])
+
+sentiment_counts_within_stance <- sentiment_counts_within_stance %>%
+  mutate(AdjustedProportion = Proportion * stance_counts_df$Proportion[match(prolife_prochoice, stance_counts_df$prolife_prochoice)])
+
+
+ggplot(sentiment_counts_within_stance, aes(x = prolife_prochoice, y = AdjustedProportion, fill = sentiment)) +
+  geom_bar(stat = "identity", position = "stack") +
+  labs(title = "Sentiment Distribution within Each Stance as Proportion of Total Data",subtitle=" After the Dobbs Leak and Before the Overturn", y = "Proportion within Stance", x = "Stance") +
+  # scale_fill_brewer(palette = "Set1") +
+    scale_fill_manual(values = c("#91bfdb", "#DEDEDE", "#ef8a62")) +
+  theme_minimal()
+
+```
+
+
+```{r}
+#POST OVERTURN.    ### THIS ONE WORKS!!
+#post52_Overturn.
+
+post52_Overturn_data <- dat[dat$post52_Overturn == 1, ]
+print(post52_Overturn_data)
+
+
+# Calculate the count for each stance
+stance_counts <- table(post52_Overturn_data$prolife_prochoice)
+stance_counts_df <- as.data.frame(stance_counts)
+names(stance_counts_df) <- c("prolife_prochoice", "Count")
+
+
+# Calculate the total number of observations
+total_count <- sum(stance_counts_df$Count)
+stance_counts_df$Proportion <- stance_counts_df$Count / total_count
+print(stance_counts_df)
+print(stance_counts_df$Proportion)
+
+sentiment_counts_within_stance <- post52_Overturn_data %>%
+  group_by(prolife_prochoice, sentiment) %>%
+  summarise(Count = n(), .groups = 'drop') %>%
+  mutate(Proportion = Count / stance_counts_df$Count[match(prolife_prochoice, stance_counts_df$prolife_prochoice)])
+
+sentiment_counts_within_stance <- sentiment_counts_within_stance %>%
+  mutate(AdjustedProportion = Proportion * stance_counts_df$Proportion[match(prolife_prochoice, stance_counts_df$prolife_prochoice)])
+
+
+ggplot(sentiment_counts_within_stance, aes(x = prolife_prochoice, y = AdjustedProportion, fill = sentiment)) +
+  geom_bar(stat = "identity", position = "stack") +
+  labs(title = "Sentiment Distribution within Each Stance as Proportion",
+  subtitle= "After the Overturn", y = "Proportion within Stance", x = "Stance") +
+  # scale_fill_brewer(palette = "Set1") +
+    scale_fill_manual(values = c("#91bfdb", "#DEDEDE", "#ef8a62")) +
+  theme_minimal()
+```
+
+
+
+
+
+
+
 
 ```{r warning = FALSE, include = FALSE}
 # proportions of stance on abortion across the 52 day windows
@@ -526,6 +700,133 @@ barplot_state_sentiment_by_region(state_sent_props,
 
 
 
+```{r}
+#BEFORE THE DOBBS
+pre52_Dobbs_data <- dat[dat$pre52_Dobbs == 1, ]
+
+# Calculate the count for each stance
+stance_counts <- table(pre52_Dobbs_data$prolife_prochoice)
+stance_counts_df <- as.data.frame(stance_counts)
+names(stance_counts_df) <- c("prolife_prochoice", "Count")
+
+# Calculate the total number of observations
+total_count <- sum(stance_counts_df$Count)
+stance_counts_df$Proportion <- stance_counts_df$Count / total_count
+print(stance_counts_df)
+
+sentiment_counts_within_stance <- pre52_Dobbs_data %>%
+  group_by(prolife_prochoice, sentiment) %>%
+  summarise(Count = n(), .groups = 'drop') %>%
+  mutate(Proportion = Count / stance_counts_df$Count[match(prolife_prochoice, stance_counts_df$prolife_prochoice)])
+
+sentiment_counts_within_stance <- sentiment_counts_within_stance %>%
+  mutate(AdjustedProportion = Proportion * 
+           stance_counts_df$Proportion[match(prolife_prochoice,
+                                             stance_counts_df$prolife_prochoice)])
+
+ggplot(sentiment_counts_within_stance, 
+       aes(x = prolife_prochoice, y = AdjustedProportion, fill = sentiment)) +
+  geom_bar(stat = "identity", position = "stack") +
+  labs(title = "Sentiment Distribution within Each Stance as Proportion of Total Data",
+       subtitle=" Before the Dobbs Leak", y = "Proportion within Stance", x = "Stance") +
+    scale_fill_manual(values = c("#91bfdb", "#DEDEDE", "#ef8a62")) +
+  theme_minimal()
+```
 
 
+```{r}
+#BETWEEN INTERVAL
+btwn52_Dobbs_Overturns_data <- dat[dat$btwn52_Dobbs_Overturn == 1, ]
+print(btwn52_Dobbs_Overturns_data)
+
+# Calculate the count for each stance
+stance_counts <- table(btwn52_Dobbs_Overturns_data$prolife_prochoice)
+stance_counts_df <- as.data.frame(stance_counts)
+names(stance_counts_df) <- c("prolife_prochoice", "Count")
+
+# Calculate the total number of observations
+total_count <- sum(stance_counts_df$Count)
+stance_counts_df$Proportion <- stance_counts_df$Count / total_count
+
+sentiment_counts_within_stance <- btwn52_Dobbs_Overturns_data %>%
+  group_by(prolife_prochoice, sentiment) %>%
+  summarise(Count = n(), .groups = 'drop') %>%
+  mutate(Proportion = Count / stance_counts_df$Count[match(prolife_prochoice, stance_counts_df$prolife_prochoice)])
+
+sentiment_counts_within_stance <- sentiment_counts_within_stance %>%
+  mutate(AdjustedProportion = Proportion * stance_counts_df$Proportion[match(prolife_prochoice, stance_counts_df$prolife_prochoice)])
+ggplot(sentiment_counts_within_stance, aes(x = prolife_prochoice, y = AdjustedProportion, fill = sentiment)) +
+  geom_bar(stat = "identity", position = "stack") +
+  labs(title = "Sentiment Distribution within Each Stance as Proportion of Total Data",subtitle=" After the Dobbs Leak and Before the Overturn", y = "Proportion within Stance", x = "Stance") +
+  scale_fill_manual(values = c("#91bfdb", "#DEDEDE", "#ef8a62")) +
+  theme_minimal()
+```
+
+
+```{r}
+#POST OVERTURN.    ### THIS ONE WORKS
+
+post52_Overturn_data <- dat[dat$post52_Overturn == 1, ]
+# Calculate the count for each stance
+stance_counts <- table(post52_Overturn_data$prolife_prochoice)
+stance_counts_df <- as.data.frame(stance_counts)
+names(stance_counts_df) <- c("prolife_prochoice", "Count")
+
+# Calculate the total number of observations
+total_count <- sum(stance_counts_df$Count)
+stance_counts_df$Proportion <- stance_counts_df$Count / total_count
+
+sentiment_counts_within_stance <- post52_Overturn_data %>%
+  group_by(prolife_prochoice, sentiment) %>%
+  summarise(Count = n(), .groups = 'drop') %>%
+  mutate(Proportion = Count / stance_counts_df$Count[match(prolife_prochoice, stance_counts_df$prolife_prochoice)])
+
+sentiment_counts_within_stance <- sentiment_counts_within_stance %>%
+  mutate(AdjustedProportion = Proportion * stance_counts_df$Proportion[match(prolife_prochoice, stance_counts_df$prolife_prochoice)])
+ggplot(sentiment_counts_within_stance, 
+       aes(x = prolife_prochoice, y = AdjustedProportion, fill = sentiment)) +
+  geom_bar(stat = "identity", position = "stack") +
+  labs(title = "Sentiment Distribution within Each Stance as Proportion",
+  subtitle= "After the Overturn", y = "Proportion within Stance", x = "Stance") +
+    scale_fill_manual(values = c("#91bfdb", "#DEDEDE", "#ef8a62")) +
+  theme_minimal()
+```
+
+```{r}
+maxes <-dat %>% group_by(author.id, date_of_tweet) %>% filter(nth_tweet_on_date==max(nth_tweet_on_date))
+summed_w_nth <- maxes %>% arrange(author.id) %>%
+  group_by(author.id) %>% select(-date_of_tweet) %>% 
+  mutate(maxx = sum(nth_tweet_on_date))
+
+summed <- maxes %>% arrange(author.id) %>%
+  group_by(author.id) %>% select(-date_of_tweet) %>% 
+  mutate(maxx = sum(nth_tweet_on_date)) %>% select(-nth_tweet_on_date) %>% 
+  distinct()  %>% arrange(desc(maxx))
+dim(summed)
+sums <- summed$maxx 
+sum(table(sums))
+table(sums)
+#boxplot(sums)
+```
+
+```{r}
+dim(dat)
+dat %>% group_by(state) %>%
+    summarise(distinct_users=n_distinct(author.id),
+              total_tweets = n(),
+              prop_total = round(total_tweets/245891,3)) %>%
+  arrange(desc(distinct_users))
+
+dat %>% group_by(region) %>%
+    summarise(distinct_users=n_distinct(author.id),
+              total_tweets = n(),
+              prop_total = round(total_tweets/245891,3)) %>%
+  arrange(desc(distinct_users))
+
+dat %>% group_by(Classification2018) %>%
+    summarise(distinct_users=n_distinct(author.id),
+              total_tweets = n(),
+              prop_total = round(total_tweets/245891,3)) %>%
+  arrange(desc(distinct_users))
+```
 

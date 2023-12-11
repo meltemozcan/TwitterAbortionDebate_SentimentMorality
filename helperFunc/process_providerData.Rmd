@@ -1,0 +1,289 @@
+---
+title: "Process Abortion Provider Data"
+author: "Meltem Ozcan"
+date: "2023-11-06"
+output: pdf_document
+---
+```{r warning = FALSE, message= FALSE}
+library(dplyr)
+library(purrr)
+```
+
+```{r}
+prov <- 
+  readxl::read_xlsx('/Users/meltemozcan/Desktop/PSYC 626/626abortion/data/Providers/AFD_2022_ArcGIS.xlsx')
+dim(prov)
+```
+
+
+```{r}
+colSums(is.na(prov[,c("state", "city", "street address", "zip code")]))
+#prov[is.na(prov$city) & !is.na(prov$`street address`),]
+# no obs with missing city but existing addr
+#prov[is.na(prov$state) & !is.na(prov$`street address`),]
+# no obs w missing state but existing addr
+prov[is.na(prov$`zip code`) & !is.na(prov$`street address`), 
+     c("facility name", "state", "city", "zip code", "street address")]
+# - to NA, find zipcodes on Google and insert 
+prov[prov$city == '-' & prov$`facility name` == "Carafem (CT)", "city"] <- NA 
+prov[prov$`street address` == '-' & prov$`facility name` == "Carafem (CT)", "city"] <- NA 
+prov[prov$`facility name` == "Summit Medical Centers: Atlanta", "zip code"] <- 30324 
+#prov[prov$`facility ID number` == 1254, "zip code"] <- 74135
+
+# examine which info is missing for address
+#prov[is.na(prov$city) | is.na(prov$`street address`) |is.na(prov$`zip code`), 
+# c("state", "city", "street address", "zip code")]
+
+# hold off on substituting NA w zipcode until confirmation about timeline
+# prov[prov$`facility name`==
+#   " <removed> ",]
+
+colSums(is.na(prov[, c("facility name", "state", "city", "zip code", "street address", "longitude", "latitude")]))
+# missing   65   cities   68 zipcodes     70  addr    123 longitudes, latitudes
+```
+
+```{r}
+# get subset w/o name, address, phone number, website
+provi <- subset(prov, select = -c(`facility name`, `street address`,
+                                  `phone number`, `website`, 
+                                   `telehealth clinic only`,
+                                  `date facility opened`, 
+                                  `facility closure date/info`,
+                                  `date of last facility update (in 2022)`))
+#  [1] "facility ID number"                                                
+#  [2] "city"                                                              
+#  [3] "state"                                                             
+#  [4] "zip code"                                                          
+#  [5] "latitude"                                                          
+#  [6] "longitude"                                                         
+#  [7] "open in 2022"                                                      
+#  [8] "provided abortions in 2022"   -> AB_Y_22                                     
+#  [9] "provided MAB in 2022"   -> MAB_Y_22                                           
+# [10] "MAB gestational limit in 2022" -> MAB_GL_22                               
+# [11] "median state cost for medication abortion in 2022"-> ST_MAB_md_cost22               
+# [12] "provided procedural abortion in 2022"  -> PAB_Y_22                                  
+# [13] "procedural abortion gestational limit in 2022" ->  PAB_GL_22                  
+# [14] "median state cost for first trimester procedural abortion in 2022" -> ST_1_PAB_md_cost22
+# [15] "median state cost for second trimester procedural abortion in 2022" -> ST_2_PAB_md_cost22
+
+
+colnames(provi)[c(1,4,7:15)] <- c("id", "zipcode", "open22",
+                                    "AB_Y_22", "MAB_Y_22", "MAB_GL_22",
+                                    "ST_MAB_md_cost22", "PAB_Y_22",
+                                    "PAB_GL_22", "ST_1_PAB_md_cost22",
+                                    "ST_2_PAB_md_cost22")
+
+#no rows with all NAs
+#head(which(rowSums(is.na(provi))==21, arr.ind=TRUE))
+
+#boxplot(table(provi$state), horizontal = TRUE, col = "plum3")
+#title(main = "Number of clinics per state")
+# hist(unlist(provi[,c("total_clinics_state")]), 
+#      main = "Total number of clinics per state", xlab = "Num clinics")
+```
+
+```{r}
+# sort by state, zipcode
+provi <- provi %>%
+  arrange(state, zipcode)
+
+# create counter variable for clinics within a state
+provi$ST_clin_index <- ifelse(!is.na(provi$state), 
+                              with(provi, ave(seq_along(state), state, 
+                                              FUN = seq_along)), NA) 
+# generate variable for total num of clinics in a state 
+provi <- provi %>% 
+  group_by(state) %>%
+  mutate(ST_clin_total = ifelse(!is.na(state), max(ST_clin_index), NA)) %>%
+  ungroup()
+
+# create counter variable for clinics within a city
+provi$city_clin_index <- ifelse(!is.na(provi$city),
+                                with(provi, ave(seq_along(city), city, 
+                                                FUN = seq_along)),NA)
+# generate variable for total num of clinics in a city 
+provi <- provi %>% 
+  group_by(city) %>%
+  mutate(city_clin_total = ifelse(!is.na(city), max(city_clin_index),NA)) %>%
+  ungroup()
+
+# create counter variable for clinics within a zipcode
+provi$zip_clin_index <- ifelse(!is.na(provi$zipcode),
+                               with(provi, ave(seq_along(zipcode), zipcode, 
+                                               FUN = seq_along)), NA) 
+# generate variable for total num of clinics in a zipcode 
+provi <- provi %>% 
+  group_by(zipcode) %>%
+  mutate(zip_clin_total = ifelse(!is.na(zipcode), max(zip_clin_index), NA)) %>%
+  ungroup()
+
+#check if correctly created
+# provi[,c("state", "ST_clin_index", "ST_clin_total", 
+#          "city", "city_clin_index", "city_clin_total",
+#          "zipcode", "zip_clin_index", "zip_clin_total")]
+```
+
+```{r include = FALSE}
+# provi[is.na(provi$zipcode), c("state", "ST_clin_total", "zip_clin_total")] 
+# 
+# provi[provi$ST_clin_total==68, c("id", "state", "city", "zipcode", 
+#                                      "ST_clin_index", "ST_clin_total", 
+#                                      "zip_clin_index", "zip_clin_total" )]
+# provi[provi$id %in% unlist(unique(provi[provi$total_clinics_zip==68, 1])),]
+# provi[provi$id==1192,]
+```
+
+```{r}
+str(provi)
+
+# recode as numeric/boolean
+provi <-
+  provi %>% mutate(PAB_Y_22 = recode(PAB_Y_22, 
+                    "Yes" = 1, 
+                    "No" = 0),
+                 MAB_Y_22 = recode(MAB_Y_22, 
+                    "Yes" = 1, 
+                    "No" = 0, 
+                    "yes" = 1),
+                 AB_Y_22 = recode(AB_Y_22, 
+                    "no" = 0, 
+                    "yes" = 1)
+                 )
+
+# ST_clin_prov_XXX22 refers to the total number of providers that provided the
+# type of abortion indicated (Y)
+# ST_clin_prov_XXX22_p refers to the proportion of the Y providers in that state
+provi <- provi %>% 
+  group_by(state) %>% 
+  mutate(ST_clin_prov_AB22 = sum(AB_Y_22, na.rm = TRUE),
+         ST_clin_prov_PAB22 = sum(PAB_Y_22, na.rm = TRUE),
+         ST_clin_prov_MAB22 = sum(MAB_Y_22, na.rm = TRUE),
+         ST_clin_prov_AB22_p = ST_clin_prov_AB22/ST_clin_total,
+         ST_clin_prov_PAB22_p = ST_clin_prov_PAB22/ST_clin_total,
+         ST_clin_prov_MAB22_p = ST_clin_prov_MAB22/ST_clin_total)
+```
+
+
+```{r}
+library(visdat)
+vis_miss(provi)
+
+# dim(provi)
+# sum(!is.na(provi$state)) == sum(!is.na(provi$ST_clin_index))
+# sum(!is.na(provi$city_clin_index)) == sum(!is.na(provi$city))
+# sum(!is.na(provi$zipcode)) == sum(!is.na(provi$zip_clin_index))
+
+colSums(is.na(provi))
+```
+
+https://guides.library.duke.edu/c.php?g=922782&p=6651545
+
+```{r}
+# for each state, if there is only one distinct value for a state level variable
+# that is non-NA, impute that distinct value to remaining rows for that state. 
+# if multiple values, leave as is.
+provider <- provi %>% 
+  group_by(state) %>%
+  arrange(state, ST_MAB_md_cost22) %>%
+  mutate(ST_MAB_md_cost22 = ifelse(n_distinct(ST_MAB_md_cost22, na.rm = TRUE)==1,
+                                   zoo::na.locf(ST_MAB_md_cost22, na.rm = FALSE), 
+                                   ST_MAB_md_cost22),
+         MAB_GL_22 = ifelse(n_distinct(MAB_GL_22, na.rm = TRUE)==1,
+                                   zoo::na.locf(MAB_GL_22, na.rm = FALSE), 
+                                   MAB_GL_22),
+         PAB_GL_22 = ifelse(n_distinct(PAB_GL_22, na.rm = TRUE)==1,
+                                   zoo::na.locf(PAB_GL_22, na.rm = FALSE), 
+                                   PAB_GL_22),
+         ST_1_PAB_md_cost22 = ifelse(n_distinct(ST_1_PAB_md_cost22, na.rm = TRUE)==1,
+                                   zoo::na.locf(ST_1_PAB_md_cost22, na.rm = FALSE), 
+                                   ST_1_PAB_md_cost22),
+         ST_2_PAB_md_cost22 = ifelse(n_distinct(ST_2_PAB_md_cost22, na.rm = TRUE)==1,
+                                   zoo::na.locf(ST_2_PAB_md_cost22, na.rm = FALSE), 
+                                   ST_2_PAB_md_cost22)
+         )
+
+# round(sum(colSums(is.na(provi[,]))) / (dim(provi)[1] * dim(provi)[2]), 3)
+# round(sum(colSums(is.na(provider))) / (dim(provider)[1] * dim(provider)[2]), 3)
+# about 7% reduction in missing values by using existing information from other 
+# rows (before creation of last set of vars)
+```
+
+
+
+```{r}
+  # sort by state, zipcode, reorder columns
+provider <- provider %>%
+  arrange(state, city, zipcode) %>%
+  select(id, state,city, zipcode, everything())
+```
+
+```{r}
+#only the state level variables
+statev <- provider %>% 
+  select(state, ST_MAB_md_cost22, 
+         MAB_GL_22, PAB_GL_22, ST_1_PAB_md_cost22, 
+         ST_2_PAB_md_cost22, ST_clin_total, ST_clin_prov_AB22, ST_clin_prov_MAB22,
+         ST_clin_prov_PAB22, ST_clin_prov_AB22_p, ST_clin_prov_MAB22_p,
+         ST_clin_prov_PAB22_p) %>% 
+  distinct(state, ST_MAB_md_cost22, 
+          MAB_GL_22, PAB_GL_22, ST_1_PAB_md_cost22, 
+          ST_2_PAB_md_cost22, ST_clin_total,ST_clin_prov_AB22, ST_clin_prov_MAB22,
+          ST_clin_prov_PAB22, ST_clin_prov_AB22_p, ST_clin_prov_MAB22_p,
+          ST_clin_prov_PAB22_p)
+
+#statev
+
+# create variables - ST_AB_provided_T, ST_PAB_provided_T, ST_MAB_provided_T
+```
+
+
+# EDA
+
+```{r}
+#number of total clinics by state
+provi %>% 
+  select(state, ST_clin_total) %>% 
+  group_by(`state`) %>% 
+  distinct() %>% ungroup()
+
+# which states have over 50 providers?
+over50st <- unlist(unique(provi[provi$ST_clin_total > 50, "state"]))
+#provi[provi$state %in% over50st, c("state", "ST_clin_total")]
+
+# states with the largest number of clinics
+provi %>% 
+  select(state, ST_clin_total) %>%  
+  filter(state %in% over50st) %>%
+  distinct() %>% 
+  arrange(desc(ST_clin_total)) %>% 
+  ungroup()
+
+
+
+st <- provi %>% 
+        select(state, zipcode, ST_clin_total, zip_clin_total) %>% 
+        filter(state %in% over50st) %>%
+        distinct() %>% 
+        arrange(state, ST_clin_total, desc(zip_clin_total), zipcode) %>% 
+        select(-c(ST_clin_total)) %>%  # up to here gives num of clinics in
+        #each county for the 5 states, ordered asc
+        select(-c(zipcode)) %>%
+        group_by(state) %>% 
+        group_map(~ table(.x))
+names(st) <- over50st
+#st
+
+#table(provi$ST_clin_total)
+
+```
+
+```{r}
+# at the provider level
+# write.csv(provider, "providers_clean.csv", row.names = FALSE)
+# at the state level
+# write.csv(statev, "providers_clean_state_lev.csv")
+```
+
+
+
+

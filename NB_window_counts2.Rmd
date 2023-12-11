@@ -12,7 +12,7 @@ library(dplyr)
 library(tidyr)
 ```
 
-```{r}
+```{r warning=FALSE, message=FALSE}
 dat <- readr::read_csv("Data/final_wave2_upd.csv")
 # total tweets by each author over the full time period
 total_num_tweets_per_auth <- dat %>% 
@@ -34,6 +34,8 @@ y = totaltweetsper day but make it total_life_perday etc.
 ```{r}
 source('helperFunc/create_window_counts.R')
 wind <- create_window_counts(dat)
+wind$dayofweek <- as.factor(wind$dayofweek)
+levels(wind$dayofweek) <- c("M", "Tue", "W", "Thu", "F", "Sat", "Sun")
 dim(wind) # 146901 rows
 table(wind$pre52_Dobbs) #7042 tweets
 table(wind$btwn52_Dobbs_Overturn)  # 23725
@@ -44,6 +46,20 @@ table(wind$negative)
 table(wind$life)
 table(wind$choice)
 table(wind$ab_neutral)
+
+dat$sentiment = ordered(as.factor(dat$sentiment), 
+                        c("negative", "neutral", "positive"))
+dat$prolife_prochoice <- ordered(as.factor(dat$prolife_prochoice),
+                                 c("life", "neutral", "choice"))
+dat$binary_morality <- ordered(as.factor(dat$binary_morality),
+                               ordered(c("moral", "non-moral")))
+
+dat$windows <- ""
+dat[dat$pre52_Dobbs==1, "windows"] <- "pre-Dobbs"
+dat[dat$btwn52_Dobbs_Overturn==1, "windows"] <-  "post-Dobbs & pre-overturn"
+dat[dat$post52_Overturn==1, "windows"]<- "post-overturn"
+dat$windows <- ordered(as.factor(dat$windows), 
+                       c("pre-Dobbs", "post-Dobbs & pre-overturn", "post-overturn"))
 ```
 
 ```{r}
@@ -262,13 +278,30 @@ tic-tac
 summary(NB_ab_neutral_M1)
 
 NB_ab_neutral_M1_CIs <- round(exp(confint(NB_ab_neutral_M1)),3)
+
+NB_ab_neutral_M1_CIs
 ```
 
 ```{r}
 
-cbind(NB_life_M1_CIs[,c(3, 1, 2)], 
+(tab_stance <- cbind(NB_life_M1_CIs[,c(3, 1, 2)], 
       NB_ab_neutral_M1_CIs[,c(3, 1, 2)], 
-      NB_choice_M1_CIs[,c(3, 1, 2)])
+      NB_choice_M1_CIs[,c(3, 1, 2)]))
+
+
+ab_ci_tab <- as.data.frame(
+  cbind(NB_life_M1_CIs[,3],  
+      paste0("[", NB_life_M1_CIs[, 1],", ", NB_life_M1_CIs[, 2], "]"),
+      NB_ab_neutral_M1_CIs[,3],  
+      paste0("[", NB_ab_neutral_M1_CIs[, 1],", ", NB_ab_neutral_M1_CIs[, 2], "]"),
+      NB_choice_M1_CIs[,3],  
+      paste0("[", NB_choice_M1_CIs[, 1],", ", NB_choice_M1_CIs[, 2], "]")
+      ))
+
+colnames(ab_ci_tab) <- rep(c("Est", "95% CI"),3)
+ab_ci_tab %>% kableExtra::kable()
+
+tab_stance[,c(1,4,7)]-1
 ```
 
 ### NB_sentneutral_M1
@@ -359,9 +392,26 @@ NB_negative_M1_CIs <- round(exp(confint(NB_negative_M1)),3)
 
 
 ```{r}
-cbind(NB_negative_M1_CIs[,c(3, 1, 2)], 
-      NB_sentneutral_M1_CIs[,c(3, 1, 2)], 
-      NB_positive_M1_CIs[,c(3, 1, 2)])
+tab_sent <- (cbind(NB_negative_M1_CIs[,c(3, 1, 2)], 
+                    NB_sentneutral_M1_CIs[,c(3, 1, 2)], 
+                    NB_positive_M1_CIs[,c(3, 1, 2)]))
+
+
+
+
+
+s_ci_tab <- as.data.frame(
+  cbind(NB_negative_M1_CIs[,3],  
+      paste0("[", NB_negative_M1_CIs[, 1],", ", NB_negative_M1_CIs[, 2], "]"),
+      NB_sentneutral_M1_CIs[,3],  
+      paste0("[", NB_sentneutral_M1_CIs[, 1],", ", NB_sentneutral_M1_CIs[, 2], "]"),
+      NB_positive_M1_CIs[,3],  
+      paste0("[", NB_positive_M1_CIs[, 1],", ", NB_positive_M1_CIs[, 2], "]")
+      ))
+
+colnames(s_ci_tab) <- rep(c("Est", "95% CI"),3)
+s_ci_tab %>% kableExtra::kable()
+
 ```
 
 
@@ -429,4 +479,17 @@ cbind(NB_moral_M1_CIs[,c(3, 1, 2)],
       NB_nonmoral_M1_CIs[,c(3, 1, 2)])
 ```
 
+
+```{r}
+m_ci_tab <- as.data.frame(
+  cbind(NB_moral_M1_CIs[,3],  
+      paste0("[", NB_moral_M1_CIs[, 1],", ", NB_moral_M1_CIs[, 2], "]"),
+      NB_sentneutral_M1_CIs[,3],  
+      paste0("[", NB_nonmoral_M1_CIs[, 1],", ", NB_nonmoral_M1_CIs[, 2], "]")
+      ))
+
+colnames(m_ci_tab) <- rep(c("Est", "95% CI"),2)
+m_ci_tab %>% kableExtra::kable()
+
+```
 
